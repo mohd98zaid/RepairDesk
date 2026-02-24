@@ -1,0 +1,20 @@
+# Local artifacts
+api_logs.txt
+api_logs_utf8.txt
+api_logs_utf8.txt
+implementation_plan.md
+implementation_plan.md.resolved
+problem\ staetment/
+CellPhone_Repair_and_Service_Invoices.jpg
+Digital_Repair_Ticket_Management_App_Documentation.pdf
+tests_out.log
+tests_out.txt
+tests_output.txt
+start_project.bat
+
+# User specific or system files
+.DS_Store
+Thumbs.db
+
+# Include repairdesk .gitignore patterns if needed, but since we are pushing the folder
+# git will respect repairdesk/.gitignore for files inside it.

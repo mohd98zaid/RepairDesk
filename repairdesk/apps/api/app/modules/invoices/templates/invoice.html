@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    @page { size: letter portrait; margin: 0.5in; }
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+      color: #000;
+      background: #e4f0f6; /* Light blue background matching the image */
+      padding: 15px;
+    }
+    .page-border {
+      border: 3px solid #000;
+      padding: 2px;
+    }
+    .inner-border {
+      border: 1px solid #000;
+      padding: 30px;
+      min-height: 900px; /* To fill full page */
+      position: relative;
+    }
+    
+    .header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .company-info .company-name {
+      font-size: 14px;
+      font-weight: bold;
+      color: #cc0000; /* Red as in image */
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .company-info p {
+      margin-bottom: 2px;
+    }
+    .company-info .contact-link {
+      color: #4a86e8;
+      text-decoration: underline;
+    }
+    
+    .invoice-title-block {
+      text-align: right;
+      min-width: 250px;
+    }
+    .invoice-title-block h1 {
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 15px;
+      letter-spacing: 1px;
+    }
+    .invoice-meta {
+      display: grid;
+      grid-template-columns: 80px auto;
+      text-align: left;
+      margin-left: auto;
+      width: fit-content;
+      row-gap: 4px;
+    }
+    
+    .double-line {
+      border-top: 3px double #7ba8cc;
+      margin: 15px 0;
+    }
+    
+    .bill-to {
+      margin-bottom: 20px;
+    }
+    .bill-to h4 {
+      font-size: 10px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    .bill-to p {
+      margin-bottom: 2px;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 15px;
+      background: #fff;
+    }
+    th, td {
+      border: 1px solid #000;
+      padding: 5px;
+      text-align: center;
+    }
+    th {
+      font-size: 10px;
+      font-weight: bold;
+      background: #e4f0f6;
+    }
+    .items-table th:nth-child(2), .items-table td:nth-child(2) {
+      text-align: left;
+    }
+    .items-table tr td {
+        height: 20px;
+    }
+    
+    .summary-section {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 20px;
+    }
+    
+    .notes-section {
+      width: 60%;
+    }
+    .notes-section h4 {
+      font-size: 10px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    .notes-box {
+      border: 1px solid #000;
+      background: #e4f0f6;
+      height: 60px;
+      padding: 5px;
+    }
+    
+    .totals-table {
+      width: 35%;
+      margin-bottom: 0;
+    }
+    .totals-table th, .totals-table td {
+      text-align: right;
+      padding: 4px 6px;
+    }
+    .totals-table th {
+      background: transparent;
+      border: none;
+      font-weight: normal;
+      width: 60%;
+    }
+    .totals-table td {
+      background: #e4f0f6;
+      width: 40%;
+    }
+    
+    .footer {
+      position: absolute;
+      bottom: 30px;
+      left: 30px;
+      right: 30px;
+      text-align: center;
+      background: #e1e9f4;
+      padding: 8px;
+      font-style: italic;
+      font-size: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-border">
+    <div class="inner-border">
+      
+      <div class="header">
+        <div class="company-info">
+          <div class="company-name">{{ shop_name | default('CELL PHONE REPAIR SERVICE') }}</div>
+          <p>Address</p>
+          <p>City, State, Zip</p>
+          <p class="contact-link">{{ shop_phone | default('Phone') }}, {{ shop_email | default('Email') }}</p>
+        </div>
+        <div class="invoice-title-block">
+          <h1>INVOICE</h1>
+          <div class="invoice-meta">
+            <span>DATE:</span>
+            <span>{{ date }}</span>
+            <span>INVOICE#:</span>
+            <span>{{ invoice_number }}</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="double-line"></div>
+      
+      <div class="bill-to">
+        <h4>BILL TO</h4>
+        <p>{{ customer_name }}</p>
+        <p>{{ customer_phone }}</p>
+        {% if customer_email %}
+        <p>{{ customer_email }}</p>
+        {% endif %}
+      </div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>DEVICE TYPE</th>
+            <th>REPORTED ISSUE</th>
+            <th>DEVICE MODEL#</th>
+            <th>STATUS</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>{{ device_type }}</td>
+            <td>{{ reported_issue }}</td>
+            <td>{{ device_model or '' }}</td>
+            <td>{{ status }}</td>
+          </tr>
+        </tbody>
+      </table>
+      
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th style="width: 10%;">ITEM</th>
+            <th style="width: 45%;">Description</th>
+            <th style="width: 15%;">Quantity</th>
+            <th style="width: 15%;">Unit Price</th>
+            <th style="width: 15%;">Line Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Cell phone repair service</td>
+            <td>1</td>
+            <td>{{ currency }}{{ labour_cost }}</td>
+            <td>{{ currency }}{{ labour_cost }}</td>
+          </tr>
+          {% for part in parts %}
+          <tr>
+            <td>{{ loop.index + 1 }}</td>
+            <td>{{ part.name }}</td>
+            <td>{{ part.quantity_used }}</td>
+            <td>{{ currency }}{{ part.unit_selling_price }}</td>
+            <td>{{ currency }}{{ part.line_total }}</td>
+          </tr>
+          {% endfor %}
+          {% for i in range(15 - (parts|length + 1)) %}
+          <tr>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      
+      <div class="summary-section">
+        <div class="notes-section">
+          <h4>NOTES</h4>
+          <div class="notes-box">
+            {{ technician_notes or '' }}
+          </div>
+        </div>
+        
+        <table class="totals-table">
+            <tr>
+                <th>SUBTOTAL</th>
+                <td style="background: #e4f0f6;">{{ currency }}{{ parts_total }}</td>
+            </tr>
+            <tr>
+                <th>LABOUR</th>
+                <td style="background: #fff;">{{ currency }}{{ labour_cost }}</td>
+            </tr>
+            <tr>
+                <th>SHIPPING</th>
+                <td style="background: #e4f0f6;">-</td>
+            </tr>
+            <tr>
+                <th>TOTAL</th>
+                <td style="background: #e4f0f6;">{{ currency }}{{ total }}</td>
+            </tr>
+            <tr>
+                <th>PAID</th>
+                <td style="background: #e4f0f6;">-</td>
+            </tr>
+            <tr>
+                <th>TOTAL DUE</th>
+                <td style="background: #e4f0f6;">{{ currency }}{{ total }}</td>
+            </tr>
+        </table>
+      </div>
+      
+      <div class="footer">
+        THANK YOU FOR YOUR BUSINESS
+      </div>
+      
+    </div>
+  </div>
+</body>
+</html>
