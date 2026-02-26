@@ -22,8 +22,7 @@ wheels/
 .venv/
 venv/
 env/
-.env
-*.env
+
 
 # Node.js
 node_modules/
@@ -38,12 +37,6 @@ apps/web/.next/
 apps/web/out/
 apps/web/build/
 
-# Env files
-.env
-.env.local
-.env.*.local
-apps/api/.env
-apps/web/.env.local
 
 # Docker
 .docker/
@@ -105,3 +98,4 @@ start_project.bat
 stop-dev.bat.lnk
 CellPhone_Repair_and_Service_Invoices.jpg
 Digital_Repair_Ticket_Management_App_Documentation.pdf
+*.txt
