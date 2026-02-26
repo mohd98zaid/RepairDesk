@@ -1,0 +1,10 @@
+{
+  "name": "ticketing-tool-root",
+  "private": true,
+  "scripts": {
+    "vercel-build": "npm run build --prefix apps/web"
+  },
+  "dependencies": {
+    "next": "16.1.6"
+  }
+}

@@ -6,5 +6,6 @@
             "destination": "/api/index.py"
         }
     ],
-    "framework": "nextjs"
+    "framework": "nextjs",
+    "outputDirectory": "apps/web/.next"
 }
