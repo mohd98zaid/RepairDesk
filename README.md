@@ -90,6 +90,7 @@ RepairDesk/
 ├── infra/            # Docker, Nginx & Compose configs
 ├── api/              # Vercel Serverless Entry points
 ├── Makefile          # Unified development commands
+├── init-and-run.bat  # ONE-CLICK Windows setup and startup
 └── vercel.json       # Monorepo deployment config
 ```
 
