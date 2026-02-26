@@ -1,10 +1,15 @@
 {
-  "name": "ticketing-tool-root",
-  "private": true,
-  "scripts": {
-    "vercel-build": "npm run build --prefix apps/web"
-  },
-  "dependencies": {
-    "next": "16.1.6"
-  }
+    "name": "ticketing-tool-root",
+    "private": true,
+    "scripts": {
+        "build": "npm run build --prefix apps/web",
+        "vercel-build": "npm run build --prefix apps/web"
+    },
+    "dependencies": {
+        "react": "19.2.3",
+        "react-dom": "19.2.3"
+    },
+    "devDependencies": {
+        "next": "16.1.6"
+    }
 }
