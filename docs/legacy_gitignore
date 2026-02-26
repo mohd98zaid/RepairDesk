@@ -70,11 +70,6 @@ htmlcov/
 # Logs
 *.log
 logs/
-api_logs.txt
-api_logs_utf8.txt
-tests_out.log
-tests_out.txt
-tests_output.txt
 
 # Secrets
 *.pem
@@ -89,19 +84,3 @@ build_output.txt
 # Temp scripts
 refactor_theme*.py
 test_api*.py
-
-# RepairDesk Root Artifacts
-implementation_plan.md*
-walkthrough.md*
-gap_analysis.md*
-api_err.txt
-api_error.log
-api_error.txt
-api_full_logs.txt
-compose-api.log
-temp_api.log
-temp_apienv.log
-start_project.bat
-stop-dev.bat.lnk
-CellPhone_Repair_and_Service_Invoices.jpg
-Digital_Repair_Ticket_Management_App_Documentation.pdf
