@@ -1,115 +1,133 @@
-# RepairDesk
+<div align="center">
 
-> **Digital Repair Ticket Management PWA** — Mobile-first repair shop management built for speed, clarity, and profit.
+![RepairDesk Banner](docs/assets/banner.png)
+
+# 🎫 RepairDesk
+
+**The ultimate digital workflow for modern repair shops.**  
+Built for speed, engineered for profit, and designed for clarity.
+
+[![Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com)
+[![Next.js](https://img.shields.io/badge/Next.js-14-blue?style=for-the-badge&logo=next.js)](https://nextjs.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-1.0-teal?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com)
+[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
+
+</div>
 
 ---
 
-## What is RepairDesk?
+## 📖 Overview
 
-RepairDesk helps independent repair shops manage their entire workflow:
+**RepairDesk** is a mobile-first Progressive Web App (PWA) that empowers independent repair shops to manage their entire lifecycle—from the moment a device is dropped off to the final invoice. It eliminates paperwork and provides real-time insights into net profits and inventory health.
 
-- 🎫 **Repair Tickets** — Create, track, and close tickets in < 60 seconds
-- 📦 **Inventory Management** — Track parts, get low-stock alerts, auto-deduct on ticket completion
-- 💰 **Profit Tracking** — Real-time revenue, parts cost, and net profit calculations
-- 🧾 **Invoicing** — Generate PDF invoices and share via link
-- 📊 **Reports** — Daily and range-based financial reports
-- 📱 **PWA / Offline** — Installable, works offline with sync on reconnect
+### ✨ Key Features
+
+*   ⚡ **Lightning Tickets** — Create and track repair tickets in under 60 seconds.
+*   📦 **Smart Inventory** — Real-time tracking with low-stock alerts and auto-deduction.
+*   💰 **Profit Engine** — Automatic calculation of revenue, part costs, and net margin per ticket.
+*   🧾 **Pro Invoicing** — Generate sleek PDF invoices via WeasyPrint and share instantly.
+*   📊 **Financial Hub** — Dynamic reports showing daily, weekly, and monthly performance.
+*   📱 **PWA Ready** — Installable on iOS/Android with offline synchronization.
 
 ---
 
-## Tech Stack
+## 🛠️ Tech Stack
 
-| Layer | Technology |
+| Layer | Technologies |
 |---|---|
-| Frontend | Next.js 14 (App Router), TailwindCSS, Zustand, React Hook Form, Zod |
-| Backend | Python 3.12, FastAPI, SQLAlchemy 2 (async), Pydantic v2 |
-| Database | PostgreSQL 16 |
-| Cache | Redis 7 |
-| Storage | MinIO (S3-compatible) |
-| PDF | WeasyPrint |
-| DevOps | Docker, Docker Compose, Nginx, GitHub Actions |
+| **Frontend** | [Next.js 14](https://nextjs.org) (App Router), TailwindCSS, Zustand, Zod |
+| **Backend** | [FastAPI](https://fastapi.tiangolo.com) (Python 3.12), SQLAlchemy 2 (Async), Pydantic v2 |
+| **Database** | [PostgreSQL 16](https://www.postgresql.org/) |
+| **Caching** | [Redis 7](https://redis.io/) |
+| **Storage** | [MinIO](https://min.io/) (S3 Compatible) |
+| **Infrastructure** | Docker, Nginx, Vercel |
 
 ---
 
-## Quick Start (Local Development)
+## 🚀 Getting Started
 
-### Prerequisites
+### 📋 Prerequisites
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- `make` (WSL on Windows, or use the commands directly)
+*   **Docker Desktop** (Recommended)
+*   **Make** (for Windows, use WSL or run commands from the Makefile)
+*   **Node.js 20+** (Optional, for local web development)
 
-### Setup
+### 🛠️ Local Development (Docker)
+
+The fastest way to get up and running is using our unified Docker stack.
 
 ```bash
-# 1. Clone the repo
-git clone <your-repo-url>
-cd repairdesk
+# 1. Clone the repository
+git clone https://github.com/mohd98zaid/RepairDesk.git
+cd RepairDesk
 
-# 2. Copy env files and fill in secrets
+# 2. Setup Environment
 cp .env.example .env
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.local.example apps/web/.env.local
 
-# 3. Start all services (hot-reload)
+# 3. Boot Services
 make dev
 
-# 4. Run database migrations
+# 4. Initialize Database
 make migrate
-
-# 5. (Optional) Seed sample data
 make seed
 ```
 
-### Services
-
-| Service | URL |
-|---|---|
-| Frontend | http://localhost:3000 |
-| API (FastAPI) | http://localhost:8000 |
-| API Docs (Swagger) | http://localhost:8000/docs |
-| MinIO Console | http://localhost:9001 |
+Local URLs:
+- **Frontend**: `http://localhost:3000`
+- **Backend API**: `http://localhost:8000/api/v1`
+- **Interactive Docs**: `http://localhost:8000/docs`
 
 ---
 
-## Project Structure
+## 📂 Project Structure
 
-```
-repairdesk/
+```text
+RepairDesk/
 ├── apps/
-│   ├── api/          # FastAPI backend
-│   └── web/          # Next.js PWA frontend
-├── infra/
-│   ├── docker/       # Dockerfiles
-│   ├── nginx/        # Nginx config
-│   └── compose/      # Docker Compose files
-├── .github/
-│   └── workflows/    # CI/CD (GitHub Actions)
-├── Makefile
-└── .env.example
+│   ├── api/          # FastAPI Backend (Python)
+│   └── web/          # Next.js Frontend (TSX)
+├── docs/             # Reorganized requirements & architecture
+├── infra/            # Docker, Nginx & Compose configs
+├── api/              # Vercel Serverless Entry points
+├── Makefile          # Unified development commands
+└── vercel.json       # Monorepo deployment config
 ```
 
 ---
 
-## Development Phases
+## ☁️ Deployment
 
-| Phase | Status | Description |
+### Vercel (Recommended)
+This project is pre-configured for Vercel Monorepos.
+
+1.  Connect your GitHub repository to Vercel.
+2.  The `vercel.json` at the root will automatically handle routing:
+    -   Frontend: Serves from `apps/web`.
+    -   API: Routes `/api/*` to the FastAPI backend via `api/index.py`.
+3.  Ensure your environment variables (from `.env`) are added to the Vercel Project Settings.
+
+---
+
+## 🗺️ Roadmap & Phases
+
+| Phase | Status | Focus |
 |---|---|---|
-| **Phase 1** | ✅ Complete | Foundation, Auth, Docker stack |
-| **Phase 2** | ✅ Complete | Ticket Module |
-| **Phase 3** | ✅ Complete | Inventory & Profit Engine |
-| **Phase 4** | ✅ Complete | Reports, Invoices & PWA |
-| **Phase 5** | ✅ Complete | QA & Production Deploy |
+| **Phase 1** | ✅ | Foundation, Auth, and Dockerization |
+| **Phase 2** | ✅ | Customer & Ticket Management |
+| **Phase 3** | ✅ | Inventory & Profit Tracking System |
+| **Phase 4** | ✅ | Reports, PDF Invoicing & PWA Sync |
+| **Phase 5** | 🚀 | QA, Hardening & Cloud Deployment |
 
 ---
 
-## Common Commands
+## 🛡️ Security
 
-```bash
-make dev          # Start all services with hot-reload
-make migrate      # Run database migrations
-make test         # Run all tests
-make test-api     # Run backend tests only
-make shell-api    # Open bash in API container
-make shell-db     # Open psql shell
-make logs         # Tail all service logs
-```
+-   **JWT Authentication**: Secure stateless auth with refresh token rotation.
+-   **RBAC**: Role-based access control for owners and staff.
+-   **Environment Safety**: `.env` files are tracked but sensitive production secrets should be managed via Vercel/Docker secrets.
+
+---
+
+<div align="center">
+Built with ❤️ for Repair Shops everywhere.
+</div>
