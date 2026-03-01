@@ -485,7 +485,7 @@ async def import_shops(
             user = User(
                 full_name=(owner_data.get("full_name") or entry.get("name") or "Owner").strip(),
                 email=owner_email,
-                hashed_password=hash_password(password),
+                password_hash=hash_password(password),
                 role="OWNER",
                 shop_id=shop.id,
                 is_active=True,
