@@ -108,3 +108,4 @@ stop-dev.bat.lnk
 CellPhone_Repair_and_Service_Invoices.jpg
 Digital_Repair_Ticket_Management_App_Documentation.pdf
 *.txt
+!requirements.txt
