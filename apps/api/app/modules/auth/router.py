@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.db import get_db
 from app.core.dependencies import CurrentUser, DbSession, get_refresh_token
 from app.modules.auth import service
@@ -51,7 +52,7 @@ async def register(
         key=REFRESH_COOKIE_NAME,
         value=result["refresh_token"],
         httponly=True,
-        secure=False,  # Set True in production via env (HTTPS required)
+        secure=settings.is_production,
         samesite="lax",
         max_age=REFRESH_COOKIE_MAX_AGE,
     )
@@ -75,7 +76,7 @@ async def login(
         key=REFRESH_COOKIE_NAME,
         value=result["refresh_token"],
         httponly=True,
-        secure=False,  # Set True in production via env (HTTPS required)
+        secure=settings.is_production,
         samesite="lax",
         max_age=REFRESH_COOKIE_MAX_AGE,
     )

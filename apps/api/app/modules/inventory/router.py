@@ -102,6 +102,7 @@ async def delete_item(
     """Soft-delete an inventory item (owner only)."""
     item = await service.get_item(current_user["shop_id"], item_id, db)
     item.is_deleted = True
+    await db.flush()
 
 
 # ── Ticket parts endpoints ─────────────────────────────────────────────────────
@@ -111,7 +112,7 @@ async def get_ticket_parts(
     ticket_id: uuid.UUID, current_user: CurrentUser, db: DbSession
 ):
     """Get all parts used in a ticket."""
-    parts = await service.get_ticket_parts(ticket_id, db)
+    parts = await service.get_ticket_parts(current_user["shop_id"], ticket_id, db)
     return {"parts": parts}
 
 

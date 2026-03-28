@@ -61,6 +61,25 @@ async def create_ticket(
     else:
         raise ValidationException("Provide either customer_id or customer_phone.")
 
+    # Enforce ticket_limit feature
+    from app.modules.billing.service import has_feature, check_feature_limit
+    ticket_limit_val = await has_feature(shop_id, "ticket_limit", db)
+    if ticket_limit_val and ticket_limit_val != "unlimited" and ticket_limit_val != "-1":
+        if ticket_limit_val.isdigit():
+            active_count_result = await db.execute(
+                select(func.count()).where(
+                    Ticket.shop_id == shop_id,
+                    Ticket.is_deleted == False,
+                    Ticket.status.in_(["RECEIVED", "IN_PROGRESS", "WAITING_PARTS", "READY"]),
+                )
+            )
+            active_count = active_count_result.scalar_one()
+            if active_count >= int(ticket_limit_val):
+                raise ValidationException(
+                    f"Ticket limit reached ({ticket_limit_val}). "
+                    "Please upgrade your plan or close existing tickets."
+                )
+
     ticket_number = await _next_ticket_number(shop_id, db)
 
     ticket = Ticket(
@@ -173,7 +192,10 @@ async def update_ticket(
     db: AsyncSession,
 ) -> Ticket:
     ticket = await get_ticket(shop_id, ticket_id, db)
+    ALLOWED_FIELDS = {"device_model", "technician_notes", "estimated_cost", "final_cost", "assigned_to", "pre_repair_checklist", "customer_signature", "warranty_days"}
     for field, value in data.model_dump(exclude_none=True).items():
+        if field not in ALLOWED_FIELDS:
+            continue
         if field in ("estimated_cost", "final_cost") and value is not None:
             setattr(ticket, field, Decimal(value))
         else:

@@ -1,17 +1,43 @@
 import asyncio
 import json
+import logging
 import uuid
 from typing import AsyncGenerator
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from jose import JWTError
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.db import AsyncSessionLocal
-from app.core.dependencies import get_current_user, CurrentUser
+from app.core.security import decode_token
 from app.modules.inventory.models import InventoryItem
 from app.modules.tickets.models import Ticket
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
+logger = logging.getLogger(__name__)
+
+
+async def _get_sse_user(token: str | None = Query(None)) -> dict:
+    """
+    Authenticate SSE connections via query parameter token.
+    EventSource API does not support custom headers, so we accept the token
+    as a query param. This is safe over HTTPS since the token is encrypted in transit.
+    """
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing token.")
+    try:
+        payload = decode_token(token)
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token.")
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid token type.")
+    user_id = payload.get("sub")
+    shop_id = payload.get("shop_id")
+    role = payload.get("role")
+    if not user_id or not shop_id or not role:
+        raise HTTPException(status_code=401, detail="Token payload is incomplete.")
+    return {"user_id": user_id, "shop_id": shop_id, "role": role}
 
 
 async def generate_notification_stream(shop_id: uuid.UUID) -> AsyncGenerator[str, None]:
@@ -72,18 +98,19 @@ async def generate_notification_stream(shop_id: uuid.UUID) -> AsyncGenerator[str
         # Client disconnected
         pass
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"SSE Error: {e}")
-        yield f"event: error\ndata: {str(e)}\n\n"
+        logger.error(f"SSE Error: {e}")
+        yield f"event: error\ndata: Internal error\n\n"
 
 
 @router.get("/stream")
 async def notification_stream(
-    current_user: CurrentUser,
+    token: str | None = Query(None),
 ):
     """
     Subscribe to real-time notification streams via Server-Sent Events.
+    Accepts token as query parameter (EventSource API limitation).
     """
+    current_user = await _get_sse_user(token)
     return StreamingResponse(
         generate_notification_stream(current_user["shop_id"]),
         media_type="text/event-stream",

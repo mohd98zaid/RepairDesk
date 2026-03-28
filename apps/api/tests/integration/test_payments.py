@@ -55,7 +55,6 @@ async def test_create_checkout_session(client: AsyncClient, headers, sample_tick
             "/api/v1/payments/create-checkout-session",
             json={
                 "ticket_id": ticket_id,
-                "amount": 5000,
                 "description": "Screen Repair",
             },
             headers=headers,

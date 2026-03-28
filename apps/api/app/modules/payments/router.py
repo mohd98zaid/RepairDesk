@@ -1,9 +1,11 @@
 import logging
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Request, Response, Depends
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.dependencies import CurrentUser
+from app.core.db import get_db
+from app.core.dependencies import CurrentUser, DbSession
 from app.modules.payments import service
 import stripe
 
@@ -13,30 +15,28 @@ logger = logging.getLogger(__name__)
 
 class CheckoutSessionRequest(BaseModel):
     ticket_id: str
-    amount: float
-    currency: str = "inr"
     description: str
+    currency: str = "inr"
+    # NOTE: amount is accepted but ignored — computed server-side from ticket data
+    amount: float | None = None
 
 
 @router.post("/create-checkout-session")
 async def create_checkout_session(
     data: CheckoutSessionRequest,
     current_user: CurrentUser,
+    db: DbSession,
 ):
-    """Create a Stripe checkout session. Requires authentication."""
+    """Create a Stripe checkout session. Amount is computed server-side from ticket."""
     return await service.create_checkout_session(
         shop_id=current_user["shop_id"],
         user_id=current_user["user_id"],
         ticket_id=data.ticket_id,
-        amount=data.amount,
         description=data.description,
         currency=data.currency,
+        db=db,
     )
 
-
-from fastapi import APIRouter, Request, Response, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.db import get_db
 
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):

@@ -23,9 +23,13 @@ router = APIRouter(prefix="/shops", tags=["Shops"])
 from typing import Any
 
 def _serialize(obj):
-    """Helper to convert SQLAlchemy obj to dict with JSON-serializable types."""
+    """Helper to convert SQLAlchemy obj to dict with JSON-serializable types.
+    Excludes sensitive fields like password_hash."""
     d = {}
+    SENSITIVE_FIELDS = {"password_hash", "password"}
     for column in obj.__table__.columns:
+        if column.name in SENSITIVE_FIELDS:
+            continue
         val = getattr(obj, column.name)
         if isinstance(val, (datetime, date)):
             val = val.isoformat()
@@ -55,8 +59,10 @@ async def update_my_shop(data: ShopUpdate, current_user: OwnerUser, db: DbSessio
     if not shop:
         raise NotFoundException("Shop not found.")
 
+    ALLOWED_FIELDS = {"name", "phone", "email", "address", "pincode", "gst_number", "logo_data"}
     for field, value in data.model_dump(exclude_none=True).items():
-        setattr(shop, field, value)
+        if field in ALLOWED_FIELDS:
+            setattr(shop, field, value)
 
     return shop
 

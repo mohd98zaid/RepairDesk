@@ -109,8 +109,11 @@ async def update_item(
     db: AsyncSession,
 ) -> InventoryItem:
     item = await get_item(shop_id, item_id, db)
+    ALLOWED_FIELDS = {"name", "sku", "description", "purchase_price", "selling_price", "quantity", "low_stock_threshold"}
     updates = data.model_dump(exclude_none=True)
     for field, value in updates.items():
+        if field not in ALLOWED_FIELDS:
+            continue
         if field in ("purchase_price", "selling_price"):
             setattr(item, field, Decimal(value))
         else:
@@ -150,8 +153,19 @@ async def add_part_to_ticket(
     4. Create TicketPart record (snapshotting prices)
     5. Recalculate ticket.parts_cost and profit
     """
-    # Get inventory item
-    item = await get_item(shop_id, data.inventory_item_id, db)
+    # Get inventory item with row lock
+    item_result = await db.execute(
+        select(InventoryItem)
+        .where(
+            InventoryItem.id == data.inventory_item_id,
+            InventoryItem.shop_id == shop_id,
+            InventoryItem.is_deleted == False,
+        )
+        .with_for_update()
+    )
+    item = item_result.scalar_one_or_none()
+    if not item:
+        raise NotFoundException("Inventory item not found.")
 
     if item.quantity < data.quantity_used:
         raise ValidationException(
@@ -205,9 +219,12 @@ async def remove_part_from_ticket(
     if not part:
         raise NotFoundException("Part not found on this ticket.")
 
-    # Restore stock
+    # Restore stock — verify item belongs to this shop
     item_result = await db.execute(
-        select(InventoryItem).where(InventoryItem.id == part.inventory_item_id)
+        select(InventoryItem).where(
+            InventoryItem.id == part.inventory_item_id,
+            InventoryItem.shop_id == shop_id,
+        )
     )
     item = item_result.scalar_one_or_none()
     if item:
@@ -226,13 +243,16 @@ async def remove_part_from_ticket(
 
 
 async def get_ticket_parts(
-    ticket_id: uuid.UUID, db: AsyncSession
+    shop_id: uuid.UUID, ticket_id: uuid.UUID, db: AsyncSession
 ) -> list[dict[str, Any]]:
-    """Get all parts for a ticket with inventory item names."""
+    """Get all parts for a ticket with inventory item names. Shop-scoped."""
     result = await db.execute(
         select(TicketPart, InventoryItem.name)
         .join(InventoryItem, TicketPart.inventory_item_id == InventoryItem.id)
-        .where(TicketPart.ticket_id == ticket_id)
+        .where(
+            TicketPart.ticket_id == ticket_id,
+            InventoryItem.shop_id == shop_id,
+        )
         .order_by(TicketPart.created_at.asc())
     )
     parts = []
@@ -316,9 +336,11 @@ async def update_vendor(
     shop_id: uuid.UUID, vendor_id: uuid.UUID, data: Any, db: AsyncSession
 ) -> Any:
     vendor = await get_vendor(shop_id, vendor_id, db)
+    ALLOWED_FIELDS = {"name", "contact_name", "email", "phone", "address", "website", "notes"}
     updates = data.model_dump(exclude_none=True)
     for field, value in updates.items():
-        setattr(vendor, field, value)
+        if field in ALLOWED_FIELDS:
+            setattr(vendor, field, value)
     return vendor
 
 

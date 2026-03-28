@@ -1,11 +1,12 @@
 import logging
 import uuid
 import stripe
+from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import ValidationException
+from app.core.exceptions import NotFoundException, ValidationException
 
 logger = logging.getLogger(__name__)
 
@@ -17,12 +18,42 @@ async def create_checkout_session(
     shop_id: uuid.UUID,
     user_id: uuid.UUID,
     ticket_id: str,
-    amount: float,
     description: str,
     currency: str = "inr",
+    db: AsyncSession = None,
 ):
+    from app.modules.tickets.models import Ticket, TicketCharge
+
     if not settings.stripe_secret_key:
         raise ValidationException("Stripe payments are not configured for this instance.")
+
+    # Compute amount server-side from ticket data (never trust client)
+    try:
+        ticket_uuid = uuid.UUID(ticket_id)
+    except ValueError:
+        raise ValidationException("Invalid ticket ID.")
+
+    result = await db.execute(
+        select(Ticket).where(
+            Ticket.id == ticket_uuid,
+            Ticket.shop_id == shop_id,
+            Ticket.is_deleted == False,
+        )
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise NotFoundException("Ticket not found.")
+
+    # Compute total: parts_cost + charges
+    parts_cost = ticket.parts_cost or Decimal(0)
+    charges_result = await db.execute(
+        select(TicketCharge).where(TicketCharge.ticket_id == ticket_uuid)
+    )
+    charges_total = sum(c.amount for c in charges_result.scalars().all())
+    total_amount = float(parts_cost + charges_total)
+
+    if total_amount <= 0:
+        raise ValidationException("Ticket has no charges to pay.")
 
     try:
         session = stripe.checkout.Session.create(
@@ -33,7 +64,7 @@ async def create_checkout_session(
                     "product_data": {
                         "name": description,
                     },
-                    "unit_amount": int(amount * 100),  # Stripe expects cents/paise
+                    "unit_amount": int(total_amount * 100),  # Stripe expects cents/paise
                 },
                 "quantity": 1,
             }],
@@ -61,13 +92,16 @@ async def handle_payment_success(ticket_id: str, db: AsyncSession) -> None:
             select(Ticket).where(Ticket.id == uuid.UUID(ticket_id))
         )
         ticket = result.scalar_one_or_none()
-        if ticket and ticket.status == "READY":
+        if not ticket:
+            logger.warning(f"Payment received for unknown ticket {ticket_id}")
+            return
+        if ticket.status == "READY":
             ticket.status = "DELIVERED"
             # Generate invoice if not already generated
             await generate_invoice(ticket.shop_id, ticket.id, db)
             await db.flush()
             logger.info(f"Payment success: ticket {ticket_id} marked DELIVERED")
         else:
-            logger.warning(f"Payment received for ticket {ticket_id} but status is not READY")
+            logger.warning(f"Payment received for ticket {ticket_id} but status is not READY (status={ticket.status})")
     except Exception:
         raise

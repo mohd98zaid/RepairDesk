@@ -74,11 +74,16 @@ def generate_presigned_download_url(object_key: str, expires_hours: int = 24, fi
 
 def build_ticket_image_key(shop_id: str, ticket_id: str, filename: str) -> str:
     """Build a consistent MinIO object key for ticket images."""
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
+    import re
+    # Sanitize: strip path separators, keep only basename
+    safe_filename = re.sub(r"[^\w\-.]", "_", filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1])
+    ext = safe_filename.rsplit(".", 1)[-1].lower() if "." in safe_filename else "jpg"
     return f"{shop_id}/tickets/{ticket_id}/{uuid.uuid4().hex}.{ext}"
 
 
 def build_invoice_key(shop_id: str, invoice_number: str) -> str:
     """Build a consistent MinIO object key for invoice PDFs."""
-    return f"{shop_id}/invoices/{invoice_number}.pdf"
+    import re
+    safe_number = re.sub(r"[^\w\-]", "_", invoice_number)
+    return f"{shop_id}/invoices/{safe_number}.pdf"
 

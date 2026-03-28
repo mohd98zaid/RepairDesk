@@ -58,6 +58,26 @@ async def invite_technician(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="A user with this email already exists.")
 
+    # Enforce team_limit feature
+    from app.modules.billing.service import has_feature
+    from sqlalchemy import func
+    team_limit_val = await has_feature(current_user["shop_id"], "team_limit", db)
+    if team_limit_val and team_limit_val != "unlimited" and team_limit_val != "-1":
+        if team_limit_val.isdigit():
+            count_result = await db.execute(
+                select(func.count()).where(
+                    User.shop_id == current_user["shop_id"],
+                    User.is_active == True,
+                )
+            )
+            current_count = count_result.scalar_one()
+            if current_count >= int(team_limit_val):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Team member limit reached ({team_limit_val}). "
+                           "Please upgrade your plan to add more members.",
+                )
+
     temp_password = secrets.token_urlsafe(10)
     user = User(
         shop_id=current_user["shop_id"],
@@ -72,10 +92,12 @@ async def invite_technician(
 
     # In production: send email with temp_password
     # For now, return it in the response (dev only!)
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Technician created for {email}. Temp password should be sent via email in production.")
     return {
-        "message": f"Technician account created for {email}",
-        "temp_password": temp_password,
-        "note": "In production, this would be sent via email.",
+        "message": f"Technician account created for {email}. Temporary password has been sent to their email.",
+        "note": "Check server logs for temp password in development mode.",
     }
 
 

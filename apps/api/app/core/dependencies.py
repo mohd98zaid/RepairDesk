@@ -45,7 +45,10 @@ async def get_current_user(
     # We check the database status on every request to ensure immediate enforcement
     # of blocks/restrictions even if the user still has a valid token.
     result = await db.execute(select(Shop.shop_status).where(Shop.id == shop_id))
-    shop_status = result.scalar_one_or_none() or "ACTIVE"
+    shop_status = result.scalar_one_or_none()
+
+    if not shop_status:
+        raise ForbiddenException("Shop not found.")
 
     if shop_status == "BLOCKED":
         raise ForbiddenException("This shop has been BLOCKED. Please contact support.")
@@ -92,3 +95,36 @@ async def get_refresh_token(
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 OwnerUser = Annotated[dict, Depends(require_owner)]
 DbSession = Annotated[AsyncSession, Depends(get_db)]
+
+
+# ─────────────────────── Feature Enforcement ───────────────────────
+
+async def require_feature(
+    feature_key: str,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> str:
+    """
+    Dependency factory: require a feature to be enabled for the current shop.
+    Returns the feature value if available, raises 403 if not.
+
+    Usage in router:
+        @router.get("/analytics")
+        async def analytics(val: str = Depends(require_feature_fn("analytics_access"))):
+            ...
+    """
+    from app.modules.billing.service import has_feature
+    value = await has_feature(current_user["shop_id"], feature_key, db)
+    if value is None or value == "false":
+        raise ForbiddenException(
+            f"This feature ({feature_key}) is not available on your current plan. "
+            "Please upgrade to access this feature."
+        )
+    return value
+
+
+def require_feature_fn(feature_key: str):
+    """Factory to create a feature-checking dependency for a specific feature key."""
+    async def _check(current_user: CurrentUser, db: DbSession) -> str:
+        return await require_feature(feature_key, current_user, db)
+    return _check

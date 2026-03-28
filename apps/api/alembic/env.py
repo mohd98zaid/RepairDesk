@@ -16,6 +16,7 @@ from app.modules.customers.models import Customer  # noqa
 from app.modules.tickets.models import Ticket, TicketImage, TicketStatusLog  # noqa
 from app.modules.inventory.models import InventoryItem, TicketPart  # noqa
 from app.modules.invoices.models import Invoice  # noqa
+from app.modules.billing.models import Plan, Feature, PlanFeature, Subscription  # noqa
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

@@ -97,3 +97,4 @@ async def delete_customer(
     """Soft-delete a customer."""
     customer = await service.get_customer(current_user["shop_id"], customer_id, db)
     customer.is_deleted = True
+    await db.flush()

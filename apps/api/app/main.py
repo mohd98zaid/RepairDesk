@@ -24,6 +24,7 @@ from app.modules.admin.router import router as admin_router
 from app.modules.search.router import router as search_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.payments.router import router as payments_router
+from app.modules.billing.router import router as billing_router
 from app.core.exceptions import RepairDeskException
 
 
@@ -40,24 +41,33 @@ async def lifespan(app: FastAPI):
         import app.modules.tickets.models  # noqa
         import app.modules.inventory.models  # noqa
         import app.modules.invoices.models  # noqa
+        import app.modules.billing.models  # noqa
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all, checkfirst=True)
 
     # Validate secrets
     import logging
     _logger = logging.getLogger("repairdesk.startup")
-    insecure_defaults = {
-        "jwt_secret": "change-me-in-production",
-        "admin_password": "change_me_strong_admin_password",
+    required_secrets = {
+        "jwt_secret": "A strong random string for signing JWTs",
+        "admin_password": "A strong password for the super-admin panel",
+        "database_url": "PostgreSQL connection string",
     }
-    for key, default_val in insecure_defaults.items():
-        if getattr(settings, key) == default_val:
+    for key, hint in required_secrets.items():
+        val = getattr(settings, key, "")
+        if not val:
             if settings.is_production:
                 raise RuntimeError(
-                    f"FATAL: '{key}' is set to the insecure default. "
-                    f"Set a strong value in .env before running in production."
+                    f"FATAL: '{key}' is not set. {hint}. Set it in .env before running in production."
                 )
-            _logger.warning(f"⚠️  '{key}' is using the default value. Change it before deploying.")
+            _logger.warning(f"⚠️  '{key}' is not set. {hint}.")
+    # Additional production hardening
+    if settings.is_production:
+        if settings.access_token_expire_minutes > 30:
+            raise RuntimeError(
+                "FATAL: access_token_expire_minutes exceeds 30 minutes in production. "
+                "Set it to 15 in .env."
+            )
 
     yield
     await close_redis()
@@ -78,8 +88,8 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
     )
 
     @app.exception_handler(RepairDeskException)
@@ -105,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(search_router, prefix=prefix)
     app.include_router(notifications_router, prefix=prefix)
     app.include_router(payments_router, prefix=prefix)
+    app.include_router(billing_router, prefix=prefix)
 
     # Attach sqladmin with authentication
     from app.core.db import engine
@@ -114,10 +125,16 @@ def create_app() -> FastAPI:
 
     class AdminAuth(AuthenticationBackend):
         async def login(self, request: StarletteRequest) -> bool:
+            import hmac as _hmac
             form = await request.form()
             username = form.get("username", "")
             password = form.get("password", "")
-            if username == settings.admin_email and password == settings.admin_password:
+            if (
+                settings.admin_email
+                and settings.admin_password
+                and _hmac.compare_digest(username.strip().lower(), settings.admin_email.lower())
+                and _hmac.compare_digest(password, settings.admin_password)
+            ):
                 request.session.update({"authenticated": True})
                 return True
             return False
@@ -129,7 +146,9 @@ def create_app() -> FastAPI:
         async def authenticate(self, request: StarletteRequest) -> bool:
             return request.session.get("authenticated", False)
 
-    auth_backend = AdminAuth(secret_key=settings.jwt_secret)
+    import hashlib
+    _admin_session_key = hashlib.sha256(f"admin-session:{settings.jwt_secret}".encode()).hexdigest()
+    auth_backend = AdminAuth(secret_key=_admin_session_key)
     admin = Admin(
         app, engine,
         title="RepairDesk Database Admin",
@@ -151,13 +170,14 @@ def create_app() -> FastAPI:
         """Health check endpoint for load balancers and monitoring."""
         from app.core.db import engine
         from app.core.redis import get_redis
+        from sqlalchemy import text as sa_text
 
         db_status = "connected"
         redis_status = "connected"
 
         try:
             async with engine.connect() as conn:
-                await conn.execute(__import__("sqlalchemy").text("SELECT 1"))
+                await conn.execute(sa_text("SELECT 1"))
         except Exception:
             db_status = "error"
 

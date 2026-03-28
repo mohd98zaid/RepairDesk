@@ -1,0 +1,220 @@
+name: Security & Quality Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # STAGE 1: Static Analysis & Security Audit
+  # ─────────────────────────────────────────────────────────────
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install security tools
+        run: |
+          pip install bandit safety pip-audit
+
+      - name: Run Bandit (Python security linter)
+        run: |
+          cd apps/api
+          bandit -r app/ -f json -o bandit-report.json --severity-level medium || true
+          bandit -r app/ --severity-level high
+        # Fail only on HIGH severity; medium is reported but not blocking
+
+      - name: Check for vulnerable dependencies
+        run: |
+          cd apps/api
+          pip install -r requirements.txt
+          pip-audit --strict --desc
+
+      - name: Check for leaked secrets
+        run: |
+          # Ensure .env files are not tracked
+          if git ls-files | grep -E '\.env$|\.env\.local$' | grep -v '\.example'; then
+            echo "::error::Secret .env files are tracked in git!"
+            git ls-files | grep -E '\.env$|\.env\.local$' | grep -v '\.example'
+            exit 1
+          fi
+          echo "No secret files tracked."
+
+  # ─────────────────────────────────────────────────────────────
+  # STAGE 2: Backend Tests (Unit + Security + Integration)
+  # ─────────────────────────────────────────────────────────────
+  test-backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    needs: [security-audit]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: repairdesk_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - "6379:6379"
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          cd apps/api
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run unit tests
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://test_user:test_pass@localhost:5432/repairdesk_test
+          JWT_SECRET: ci-test-secret-key-for-testing-only
+          ADMIN_EMAIL: admin@test.com
+          ADMIN_PASSWORD: ci-admin-password-123
+          DATABASE_URL: postgresql+asyncpg://test_user:test_pass@localhost:5432/repairdesk_test
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          cd apps/api
+          pytest tests/unit/ -v --tb=short
+
+      - name: Run security tests
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://test_user:test_pass@localhost:5432/repairdesk_test
+          JWT_SECRET: ci-test-secret-key-for-testing-only
+          ADMIN_EMAIL: admin@test.com
+          ADMIN_PASSWORD: ci-admin-password-123
+          DATABASE_URL: postgresql+asyncpg://test_user:test_pass@localhost:5432/repairdesk_test
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          cd apps/api
+          pytest tests/security/ -v --tb=short
+
+      - name: Run integration tests
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://test_user:test_pass@localhost:5432/repairdesk_test
+          JWT_SECRET: ci-test-secret-key-for-testing-only
+          ADMIN_EMAIL: admin@test.com
+          ADMIN_PASSWORD: ci-admin-password-123
+          DATABASE_URL: postgresql+asyncpg://test_user:test_pass@localhost:5432/repairdesk_test
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          cd apps/api
+          pytest tests/integration/ -v --tb=short
+
+      - name: Run full test suite with coverage
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://test_user:test_pass@localhost:5432/repairdesk_test
+          JWT_SECRET: ci-test-secret-key-for-testing-only
+          ADMIN_EMAIL: admin@test.com
+          ADMIN_PASSWORD: ci-admin-password-123
+          DATABASE_URL: postgresql+asyncpg://test_user:test_pass@localhost:5432/repairdesk_test
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          cd apps/api
+          pytest tests/ -v --cov=app --cov-report=xml --cov-fail-under=60
+
+      - uses: codecov/codecov-action@v4
+        with:
+          files: apps/api/coverage.xml
+        continue-on-error: true
+
+  # ─────────────────────────────────────────────────────────────
+  # STAGE 3: Frontend Tests
+  # ─────────────────────────────────────────────────────────────
+  test-frontend:
+    name: Frontend Lint & Type Check
+    runs-on: ubuntu-latest
+    needs: [security-audit]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: cd apps/web && npm ci
+
+      - name: Lint
+        run: cd apps/web && npm run lint
+
+      - name: Type check
+        run: cd apps/web && npx tsc --noEmit
+
+      - name: Unit tests
+        run: cd apps/web && npm run test
+
+  # ─────────────────────────────────────────────────────────────
+  # STAGE 4: Docker Build
+  # ─────────────────────────────────────────────────────────────
+  build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -f infra/docker/Dockerfile.api -t repairdesk-api:${{ github.sha }} apps/api
+
+      - name: Build Web image
+        run: docker build -f infra/docker/Dockerfile.web -t repairdesk-web:${{ github.sha }} apps/web
+
+  # ─────────────────────────────────────────────────────────────
+  # STAGE 5: Deploy (main branch only)
+  # ─────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/repairdesk
+            git pull origin main
+            docker compose -f infra/compose/docker-compose.yml build
+            docker compose -f infra/compose/docker-compose.yml up -d
+            docker compose ps

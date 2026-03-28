@@ -64,11 +64,17 @@ echo.
 echo [4/5] Running Database Migrations...
 echo [INFO] Waiting for API to be ready...
 :WAIT_FOR_API
-docker compose -f infra\compose\docker-compose.dev.yml exec api alembic upgrade head >nul 2>&1
+curl -s -o nul -w "%%{http_code}" http://localhost:8000/api/v1/health | findstr "200" >nul 2>&1
 if %errorlevel% neq 0 (
     echo [INFO] API is still initializing...
     timeout /t 5 >nul
     goto WAIT_FOR_API
+)
+echo [OK] API is ready. Running migrations...
+docker compose -f infra\compose\docker-compose.dev.yml exec api alembic upgrade head >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [INFO] Tables exist, stamping alembic to current head...
+    docker compose -f infra\compose\docker-compose.dev.yml exec api alembic stamp head >nul 2>&1
 )
 echo [OK] Database is up to date.
 echo.

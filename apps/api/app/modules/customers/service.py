@@ -109,6 +109,8 @@ async def update_customer(
     db: AsyncSession,
 ) -> Customer:
     customer = await get_customer(shop_id, customer_id, db)
+    ALLOWED_FIELDS = {"name", "phone", "email", "notes"}
     for field, value in data.model_dump(exclude_none=True).items():
-        setattr(customer, field, value)
+        if field in ALLOWED_FIELDS:
+            setattr(customer, field, value)
     return customer

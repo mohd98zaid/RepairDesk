@@ -21,11 +21,13 @@ from app.modules.users.models import User
 async def send_otp(email: str, db: AsyncSession) -> None:
     """
     Generate and send a 6-digit OTP to the user's email.
+    Does not leak whether the email is already registered.
     """
     # Check if already registered
     existing = await db.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none():
-        raise ConflictException(f"An account with email '{email}' already exists.")
+        # Don't reveal email exists — return success anyway
+        return
 
     import random
     from app.modules.notifications.email import EmailService
@@ -71,14 +73,8 @@ async def register_shop(data: RegisterRequest, db: AsyncSession) -> dict:
     if not verified_email or verified_email != data.email:
         raise UnauthorizedException("Invalid or expired verification token. Please verify your email again.")
 
-    # Check duplicate email
-    existing = await db.execute(select(User).where(User.email == data.email))
-    if existing.scalar_one_or_none():
-        raise ConflictException(f"An account with email '{data.email}' already exists.")
-
-    # Invalidate token after single use
+    # Check duplicate email (after invalidating token to close race window)
     await redis.delete(f"verified:{data.verified_token}")
-    # Check duplicate email
     existing = await db.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none():
         raise ConflictException(f"An account with email '{data.email}' already exists.")

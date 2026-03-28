@@ -68,3 +68,16 @@ shell-db:
 
 seed:
 	$(COMPOSE_DEV) exec api python scripts/seed.py
+
+# -------------------------------------------------------
+# Security Audit
+# -------------------------------------------------------
+.PHONY: audit audit-fix test-security
+audit:
+	$(COMPOSE_DEV) exec api python scripts/audit_fix.py audit
+
+audit-fix:
+	$(COMPOSE_DEV) exec api python scripts/audit_fix.py full
+
+test-security:
+	$(COMPOSE_DEV) exec api pytest tests/security/ -v --tb=short

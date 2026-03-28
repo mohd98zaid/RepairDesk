@@ -59,10 +59,16 @@ AdminUser = Depends(_get_admin_user)
 @router.post("/auth/login")
 async def admin_login(body: dict):
     """Authenticate with platform admin credentials from .env."""
+    import hmac as _hmac
     email = body.get("email", "").strip().lower()
     password = body.get("password", "")
 
-    if email != settings.admin_email.lower() or password != settings.admin_password:
+    if (
+        not settings.admin_email
+        or not settings.admin_password
+        or not _hmac.compare_digest(email, settings.admin_email.lower())
+        or not _hmac.compare_digest(password, settings.admin_password)
+    ):
         raise HTTPException(status_code=401, detail="Invalid admin credentials")
 
     token = _create_admin_token()
@@ -170,6 +176,21 @@ async def get_platform_analytics(
         for r in top_revenue_rows.fetchall()
     ]
 
+    # Plan distribution
+    plan_rows = await db.execute(
+        select(Shop.plan, func.count()).where(Shop.is_active == True).group_by(Shop.plan)
+    )
+    plan_distribution = {row[0]: row[1] for row in plan_rows.fetchall()}
+
+    # Subscription stats (if billing module exists)
+    subscription_stats = {}
+    try:
+        from app.modules.billing.service import get_subscription_stats
+        subscription_stats = await get_subscription_stats(db)
+    except Exception as e:
+        import logging
+        logging.getLogger("admin.analytics").debug(f"Subscription stats unavailable: {e}")
+
     return {
         "totals": {
             "shops": total_shops,
@@ -180,6 +201,8 @@ async def get_platform_analytics(
         },
         "shops_by_status": shops_by_status,
         "tickets_by_status": ticket_by_status,
+        "plan_distribution": plan_distribution,
+        "subscriptions": subscription_stats,
         "monthly": monthly,
         "top_shops": top_shops,
     }
@@ -470,12 +493,16 @@ async def import_shops(
                 continue
 
             # Create shop
+            ALLOWED_PLANS = {"free", "basic", "pro", "enterprise"}
+            ALLOWED_SHOP_STATUSES = {"ACTIVE", "INACTIVE", "BLOCKED", "RESTRICTED"}
+            import_plan = (entry.get("plan") or "free").lower()
+            import_status = (entry.get("shop_status") or "ACTIVE").upper()
             shop = Shop(
                 name=(entry.get("name") or "Imported Shop").strip(),
                 email=owner_email,
                 phone=entry.get("phone"),
-                plan=entry.get("plan") or "free",
-                shop_status=entry.get("shop_status") or "ACTIVE",
+                plan=import_plan if import_plan in ALLOWED_PLANS else "free",
+                shop_status=import_status if import_status in ALLOWED_SHOP_STATUSES else "ACTIVE",
             )
             db.add(shop)
             await db.flush()

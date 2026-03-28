@@ -12,18 +12,18 @@ class Settings(BaseSettings):
     )
 
     # Database
-    database_url: str = "postgresql+asyncpg://repairdesk_user:password@localhost:5432/repairdesk"
+    database_url: str = ""
 
     # Security
-    jwt_secret: str = "change-me-in-production"
+    jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 24  # 24 hours in dev (15 min in prod via .env)
+    access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
 
     # MinIO
     minio_endpoint: str = "localhost:9000"
-    minio_access_key: str = "repairdesk_access"
-    minio_secret_key: str = "change_me"
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
     minio_bucket: str = "repairdesk"
     minio_use_ssl: bool = False
 
@@ -48,8 +48,8 @@ class Settings(BaseSettings):
     twilio_from_number: str = ""
 
     # Super-Admin (platform-level, not stored in DB)
-    admin_email: str = "admin@repairdesk.app"
-    admin_password: str = "change_me_strong_admin_password"
+    admin_email: str = ""
+    admin_password: str = ""
 
     # Stripe
     stripe_publishable_key: str = ""
