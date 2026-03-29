@@ -269,9 +269,6 @@ async def delete_feature(feature_id: uuid.UUID, db: AsyncSession) -> None:
         raise ValueError("Feature not found")
 
     # Remove all plan-feature mappings first
-    await db.execute(
-        select(PlanFeature).where(PlanFeature.feature_id == feature_id)
-    )
     mappings = (await db.execute(
         select(PlanFeature).where(PlanFeature.feature_id == feature_id)
     )).scalars().all()
