@@ -11,9 +11,7 @@ export interface PendingMutation {
     error?: string;
 }
 
-let _db: InstanceType<typeof SyncDatabase> | null = null;
-
-class SyncDatabase extends Dexie {
+export class SyncDatabase extends Dexie {
     mutations!: Table<PendingMutation, number>;
 
     constructor() {
@@ -24,20 +22,14 @@ class SyncDatabase extends Dexie {
     }
 }
 
-export function getSyncDB() {
-    if (typeof window === "undefined") return null;
-    if (!_db) _db = new SyncDatabase();
-    return _db;
-}
+export const syncDB = new SyncDatabase();
 
 /**
  * Push a failed or offline mutation to the queue.
  */
 export async function queueMutation(config: any) {
     try {
-        const db = getSyncDB();
-        if (!db) return;
-        await db.mutations.add({
+        await syncDB.mutations.add({
             method: config.method?.toUpperCase() || "POST",
             url: config.url || "",
             headers: config.headers,
