@@ -96,8 +96,8 @@ def create_app() -> FastAPI:
         title="RepairDesk API",
         description="Digital Repair Ticket Management System",
         version="1.0.0",
-        docs_url="/docs" if not settings.is_production else None,
-        redoc_url="/redoc" if not settings.is_production else None,
+        docs_url="/docs",
+        redoc_url="/redoc",
         lifespan=lifespan,
     )
 
