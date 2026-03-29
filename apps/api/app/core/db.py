@@ -3,13 +3,19 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
 
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.environment == "development",
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-)
+# If the database_url is empty, use a dummy in-memory SQLite to allow the app to initialize.
+# The `lifespan` in main.py will gracefully catch the missing URL and log a fatal error.
+_db_url = settings.database_url or "sqlite+aiosqlite:///:memory:"
+
+_engine_kwargs = {
+    "echo": settings.environment == "development",
+    "pool_pre_ping": True,
+}
+if "sqlite" not in _db_url:
+    _engine_kwargs["pool_size"] = 10
+    _engine_kwargs["max_overflow"] = 20
+
+engine = create_async_engine(_db_url, **_engine_kwargs)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

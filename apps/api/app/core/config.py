@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import computed_field
+from pydantic import computed_field, model_validator
 from functools import lru_cache
 
 
@@ -56,6 +56,15 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     frontend_url: str = "http://localhost:3000"
+
+    @model_validator(mode="after")
+    def fix_database_url(self) -> "Settings":
+        if self.database_url:
+            if self.database_url.startswith("postgres://"):
+                self.database_url = self.database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+            elif self.database_url.startswith("postgresql://"):
+                self.database_url = self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return self
 
     @computed_field  # type: ignore[misc]
     @property
