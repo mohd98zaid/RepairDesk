@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -17,6 +17,10 @@ from app.modules.auth.schemas import (
     VerifyOtpRequest,
     VerifyOtpResponse,
 )
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -25,7 +29,8 @@ REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
 
 
 @router.post("/send-otp", status_code=202)
-async def send_otp(data: SendOtpRequest, db: DbSession):
+@limiter.limit("5/minute")
+async def send_otp(request: Request, data: SendOtpRequest, db: DbSession):
     """Send a 6-digit OTP to a valid Gmail address."""
     await service.send_otp(data.email, db)
     return {"message": "OTP sent successfully."}
@@ -64,7 +69,9 @@ async def register(
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def login(
+    request: Request,
     data: LoginRequest,
     response: Response,
     db: DbSession,

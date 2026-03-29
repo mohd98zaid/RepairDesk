@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.db import get_db
 from app.core.dependencies import CurrentUser, DbSession
 from app.modules.payments import service
+from app.core.audit_logger import log_payment_webhook_invalid, log_payment_failed
 import stripe
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
@@ -51,9 +52,11 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         event = stripe.Webhook.construct_event(
             payload, sig_header, settings.stripe_webhook_secret
         )
-    except ValueError:
+    except ValueError as e:
+        log_payment_webhook_invalid(f"Invalid payload: {e}")
         return Response(status_code=400)
-    except stripe.error.SignatureVerificationError:
+    except stripe.error.SignatureVerificationError as e:
+        log_payment_webhook_invalid(f"Invalid signature: {e}")
         return Response(status_code=400)
 
     # Handle successful payment
@@ -65,5 +68,6 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 await service.handle_payment_success(ticket_id, db)
             except Exception as e:
                 logger.error(f"Error handling payment success for ticket {ticket_id}: {e}")
+                log_payment_failed(None, ticket_id, f"Webhook handler error: {e}")
 
     return Response(status_code=200)

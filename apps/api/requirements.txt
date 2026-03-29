@@ -18,3 +18,4 @@ email-validator==2.2.0
 sqladmin==0.23.0
 itsdangerous==2.2.0
 stripe==8.6.0
+slowapi==0.1.9

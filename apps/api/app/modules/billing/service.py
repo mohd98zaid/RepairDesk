@@ -14,6 +14,11 @@ from sqlalchemy.orm import selectinload
 
 from app.modules.billing.models import Feature, Plan, PlanFeature, Subscription
 from app.modules.shops.models import Shop
+from app.core.audit_logger import (
+    log_subscription_created,
+    log_subscription_cancelled,
+    log_subscription_changed,
+)
 
 
 # ─────────────────────────── Feature Checking ───────────────────────────
@@ -305,6 +310,7 @@ async def subscribe_shop(
     if existing:
         existing.status = "cancelled"
         existing.cancelled_at = now
+        log_subscription_cancelled(str(shop_id), existing.plan.slug if existing.plan else "unknown")
 
     # Calculate period
     if billing_cycle == "yearly":
@@ -336,6 +342,13 @@ async def subscribe_shop(
         shop.plan_expires_at = period_end
 
     await db.flush()
+
+    # Log subscription creation
+    old_plan = existing.plan.slug if existing and existing.plan else "none"
+    log_subscription_created(str(shop_id), plan.name, plan.slug, billing_cycle)
+    if old_plan != "none":
+        log_subscription_changed(str(shop_id), old_plan, plan.slug)
+
     return subscription
 
 
@@ -352,6 +365,7 @@ async def cancel_subscription(shop_id: uuid.UUID, db: AsyncSession) -> None:
     if sub:
         sub.status = "cancelled"
         sub.cancelled_at = now
+        old_plan = sub.plan.slug if sub.plan else "unknown"
         # Sync shop fields for backward compatibility
         shop_result = await db.execute(select(Shop).where(Shop.id == shop_id))
         shop = shop_result.scalar_one_or_none()
@@ -359,6 +373,7 @@ async def cancel_subscription(shop_id: uuid.UUID, db: AsyncSession) -> None:
             shop.plan = "free"
             shop.plan_expires_at = None
         await db.flush()
+        log_subscription_cancelled(str(shop_id), old_plan)
 
 
 async def get_shop_subscription(shop_id: uuid.UUID, db: AsyncSession) -> Subscription | None:

@@ -63,6 +63,7 @@ async def create_ticket(
 
     # Enforce ticket_limit feature
     from app.modules.billing.service import has_feature, check_feature_limit
+    from app.core.audit_logger import log_limit_blocked
     ticket_limit_val = await has_feature(shop_id, "ticket_limit", db)
     if ticket_limit_val and ticket_limit_val != "unlimited" and ticket_limit_val != "-1":
         if ticket_limit_val.isdigit():
@@ -75,6 +76,10 @@ async def create_ticket(
             )
             active_count = active_count_result.scalar_one()
             if active_count >= int(ticket_limit_val):
+                log_limit_blocked(
+                    str(shop_id), "ticket_limit",
+                    int(ticket_limit_val), active_count
+                )
                 raise ValidationException(
                     f"Ticket limit reached ({ticket_limit_val}). "
                     "Please upgrade your plan or close existing tickets."

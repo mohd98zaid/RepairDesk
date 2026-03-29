@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import NotFoundException, ValidationException
+from app.core.audit_logger import log_payment_created, log_payment_success, log_payment_failed
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,8 @@ async def create_checkout_session(
     if total_amount <= 0:
         raise ValidationException("Ticket has no charges to pay.")
 
+    log_payment_created(str(shop_id), ticket_id, total_amount)
+
     try:
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
@@ -79,6 +82,7 @@ async def create_checkout_session(
         )
         return {"url": session.url}
     except Exception as e:
+        log_payment_failed(str(shop_id), ticket_id, str(e))
         raise ValidationException(f"Could not create checkout session: {e}")
 
 
@@ -101,7 +105,9 @@ async def handle_payment_success(ticket_id: str, db: AsyncSession) -> None:
             await generate_invoice(ticket.shop_id, ticket.id, db)
             await db.flush()
             logger.info(f"Payment success: ticket {ticket_id} marked DELIVERED")
+            log_payment_success(str(ticket.shop_id), ticket_id)
         else:
             logger.warning(f"Payment received for ticket {ticket_id} but status is not READY (status={ticket.status})")
+            log_payment_failed(str(ticket.shop_id) if ticket else None, ticket_id, f"Status is {ticket.status}, not READY")
     except Exception:
         raise

@@ -21,6 +21,10 @@ from app.modules.inventory.models import InventoryItem
 from app.modules.shops.models import Shop
 from app.modules.tickets.models import Ticket
 from app.modules.users.models import User
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/admin", tags=["Super-Admin"])
 
@@ -57,7 +61,8 @@ AdminUser = Depends(_get_admin_user)
 # ─────────────────────────── Login ───────────────────────────
 
 @router.post("/auth/login")
-async def admin_login(body: dict):
+@limiter.limit("5/minute")
+async def admin_login(request: Request, body: dict):
     """Authenticate with platform admin credentials from .env."""
     import hmac as _hmac
     email = body.get("email", "").strip().lower()

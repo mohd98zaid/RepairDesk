@@ -27,6 +27,12 @@ from app.modules.payments.router import router as payments_router
 from app.modules.billing.router import router as billing_router
 from app.core.exceptions import RepairDeskException
 
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -61,8 +67,20 @@ async def lifespan(app: FastAPI):
                     f"FATAL: '{key}' is not set. {hint}. Set it in .env before running in production."
                 )
             _logger.warning(f"⚠️  '{key}' is not set. {hint}.")
-    # Additional production hardening
+
+    # Strong JWT_SECRET validation
     if settings.is_production:
+        jwt_val = settings.jwt_secret
+        if len(jwt_val) < 32:
+            raise RuntimeError(
+                f"FATAL: JWT_SECRET is too short ({len(jwt_val)} chars). "
+                "Minimum 32 characters required in production."
+            )
+        if jwt_val in ("change-me-in-production", "change_me", "secret", "changeme"):
+            raise RuntimeError(
+                "FATAL: JWT_SECRET is a common default value. "
+                "Use: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+            )
         if settings.access_token_expire_minutes > 30:
             raise RuntimeError(
                 "FATAL: access_token_expire_minutes exceeds 30 minutes in production. "
@@ -82,6 +100,10 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if not settings.is_production else None,
         lifespan=lifespan,
     )
+
+    # Rate limiter
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     # CORS middleware
     app.add_middleware(
@@ -191,6 +213,57 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=200 if is_healthy else 503,
             content={"status": "ok" if is_healthy else "degraded", "db": db_status, "redis": redis_status},
+        )
+
+    # Analytics verification endpoint
+    @app.get(f"{prefix}/analytics/verify", tags=["Health"])
+    async def analytics_verify():
+        """Verify that subscription analytics tables exist and return counts."""
+        from app.core.db import AsyncSessionLocal
+        from sqlalchemy import text as sa_text, func, select
+
+        checks = {}
+        all_ok = True
+
+        async with AsyncSessionLocal() as session:
+            # Check plans table
+            try:
+                result = await session.execute(select(func.count()).select_from(sa_text("plans")))
+                checks["plans"] = {"exists": True, "count": result.scalar_one()}
+            except Exception as e:
+                checks["plans"] = {"exists": False, "error": str(e)}
+                all_ok = False
+
+            # Check features table
+            try:
+                result = await session.execute(select(func.count()).select_from(sa_text("features")))
+                checks["features"] = {"exists": True, "count": result.scalar_one()}
+            except Exception as e:
+                checks["features"] = {"exists": False, "error": str(e)}
+                all_ok = False
+
+            # Check subscriptions table
+            try:
+                result = await session.execute(select(func.count()).select_from(sa_text("subscriptions")))
+                checks["subscriptions"] = {"exists": True, "count": result.scalar_one()}
+            except Exception as e:
+                checks["subscriptions"] = {"exists": False, "error": str(e)}
+                all_ok = False
+
+            # Check shops with plan field
+            try:
+                result = await session.execute(
+                    select(func.count()).select_from(sa_text("shops")).where(
+                        sa_text("shops.plan IS NOT NULL")
+                    )
+                )
+                checks["shops_with_plan"] = result.scalar_one()
+            except Exception as e:
+                checks["shops_with_plan"] = {"error": str(e)}
+
+        return JSONResponse(
+            status_code=200 if all_ok else 503,
+            content={"status": "ok" if all_ok else "degraded", "checks": checks},
         )
 
     return app

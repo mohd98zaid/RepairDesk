@@ -30,6 +30,9 @@ minio==7.2.9
 # ─── Payments ───
 stripe==8.6.0
 
+# ─── Rate Limiting ───
+slowapi==0.1.9
+
 # ─── PDF & Templates ───
 weasyprint==63.0
 jinja2==3.1.4
