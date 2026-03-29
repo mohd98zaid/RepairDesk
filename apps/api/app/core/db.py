@@ -3,17 +3,25 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
 
-# If the database_url is empty, use a dummy in-memory SQLite to allow the app to initialize.
-# The `lifespan` in main.py will gracefully catch the missing URL and log a fatal error.
-_db_url = settings.database_url or "sqlite+aiosqlite:///:memory:"
+_db_url = settings.database_url
+
+if not _db_url:
+    raise ValueError(
+        "\n"
+        "====================================================================\n"
+        "FATAL STARTUP ERROR: DATABASE_URL is missing or empty.\n"
+        "If you are on Render, you MUST copy the 'Internal Database URL'\n"
+        "from your PostgreSQL instance and paste it as the 'DATABASE_URL'\n"
+        "Environment Variable in your API web service.\n"
+        "====================================================================\n"
+    )
 
 _engine_kwargs = {
     "echo": settings.environment == "development",
     "pool_pre_ping": True,
+    "pool_size": 10,
+    "max_overflow": 20,
 }
-if "sqlite" not in _db_url:
-    _engine_kwargs["pool_size"] = 10
-    _engine_kwargs["max_overflow"] = 20
 
 engine = create_async_engine(_db_url, **_engine_kwargs)
 
