@@ -3,15 +3,16 @@
 import { useEffect, useState } from "react";
 import { CloudOff, CloudSync, CheckCircle2 } from "lucide-react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { syncDB } from "@/lib/db";
+import { getSyncDB } from "@/lib/db";
 import { api } from "@/lib/api/client";
 
 export function OfflineSyncManager() {
     const [isOnline, setIsOnline] = useState(true);
     const [isSyncing, setIsSyncing] = useState(false);
+    const syncDB = getSyncDB();
 
     // Auto-update pending mutations count
-    const pendingCount = useLiveQuery(() => syncDB.mutations.where({ status: "PENDING" }).count(), []) || 0;
+    const pendingCount = useLiveQuery(() => syncDB?.mutations.where({ status: "PENDING" }).count() ?? 0, []) || 0;
 
     // Monitor network status
     useEffect(() => {
@@ -36,6 +37,7 @@ export function OfflineSyncManager() {
     }, [isOnline, pendingCount, isSyncing]);
 
     const syncPendingMutations = async () => {
+        if (!syncDB) return;
         setIsSyncing(true);
         try {
             const pending = await syncDB.mutations.where({ status: "PENDING" }).sortBy("created_at");
