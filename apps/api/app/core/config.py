@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # App
     app_url: str = "http://localhost:3000"
     environment: str = "development"
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: str | list[str] = ["http://localhost:3000"]
     
     # Twilio
     twilio_account_sid: str = ""
@@ -58,12 +58,22 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
 
     @model_validator(mode="after")
-    def fix_database_url(self) -> "Settings":
+    def fix_cors_and_db(self) -> "Settings":
+        # Fix database URL format for asyncpg
         if self.database_url:
             if self.database_url.startswith("postgres://"):
                 self.database_url = self.database_url.replace("postgres://", "postgresql+asyncpg://", 1)
             elif self.database_url.startswith("postgresql://"):
                 self.database_url = self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+                
+        # Gracefully handle comma-separated strings for cors_origins
+        if isinstance(self.cors_origins, str):
+            # Clean up potential accidental brackets from invalid JSON strings
+            cleaned = self.cors_origins.strip().strip("[]").strip()
+            self.cors_origins = [
+                x.strip().strip("\"'") for x in cleaned.split(",") if x.strip()
+            ]
+            
         return self
 
     @computed_field  # type: ignore[misc]
