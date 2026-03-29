@@ -1,0 +1,50 @@
+{
+    "name": "RepairDesk",
+    "short_name": "RepairDesk",
+    "description": "Digital Repair Ticket Management System",
+    "start_url": "/dashboard",
+    "display": "standalone",
+    "background_color": "#0a0a0f",
+    "theme_color": "#6366f1",
+    "orientation": "portrait",
+    "icons": [
+        {
+            "src": "/icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable any"
+        },
+        {
+            "src": "/icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable any"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "New Ticket",
+            "short_name": "New Ticket",
+            "description": "Create a new repair ticket",
+            "url": "/tickets/new",
+            "icons": [
+                {
+                    "src": "/icons/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        },
+        {
+            "name": "Tickets",
+            "short_name": "Tickets",
+            "description": "View all tickets",
+            "url": "/tickets",
+            "icons": [
+                {
+                    "src": "/icons/icon-192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        }
+    ]
+}
