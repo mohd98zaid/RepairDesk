@@ -43,10 +43,16 @@ async def get_current_user(
     if not user_id or not shop_id or not role:
         raise UnauthorizedException("Token payload is incomplete.")
 
+    try:
+        user_id_uuid = UUID(user_id)
+        shop_id_uuid = UUID(shop_id)
+    except ValueError:
+        raise UnauthorizedException("Invalid token payload format.")
+
     # ─── REAL-TIME SHOP STATUS ENFORCEMENT ───
     # We check the database status on every request to ensure immediate enforcement
     # of blocks/restrictions even if the user still has a valid token.
-    result = await db.execute(select(Shop.shop_status).where(Shop.id == shop_id))
+    result = await db.execute(select(Shop.shop_status).where(Shop.id == shop_id_uuid))
     shop_status = result.scalar_one_or_none()
 
     if not shop_status:
@@ -68,8 +74,8 @@ async def get_current_user(
             )
 
     return {
-        "user_id": user_id,
-        "shop_id": shop_id,
+        "user_id": user_id_uuid,
+        "shop_id": shop_id_uuid,
         "role": role,
         "shop_status": shop_status,
         "session_id": session_id,

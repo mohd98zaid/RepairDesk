@@ -249,10 +249,18 @@ async def refresh_access_token(refresh_token: str, db: AsyncSession) -> str:
     if not user:
         raise UnauthorizedException("User not found or inactive.")
 
+    from app.modules.shops.models import Shop
+    shop_result = await db.execute(select(Shop.shop_status).where(Shop.id == user.shop_id))
+    shop_status = shop_result.scalar_one_or_none()
+
+    if not shop_status or shop_status in ("BLOCKED", "INACTIVE"):
+        raise UnauthorizedException("Your shop account is currently not active.")
+
     token_data = {
         "sub": str(user.id),
         "shop_id": str(user.shop_id),
         "role": user.role,
+        "shop_status": shop_status,
         "session_id": session_id,
     }
     return create_access_token(token_data)

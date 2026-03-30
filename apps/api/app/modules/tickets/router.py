@@ -257,16 +257,7 @@ async def remove_ticket_charge(
     )
 
 
-@router.delete("/{ticket_id}", status_code=204)
-async def delete_ticket(
-    ticket_id: uuid.UUID,
-    current_user: CurrentUser,
-    db: DbSession,
-):
-    """Soft-delete a ticket."""
-    ticket = await service.get_ticket(current_user["shop_id"], ticket_id, db)
-    ticket.is_deleted = True
-    await db.flush()
+
 
 
 # ── Public (no-auth) feedback endpoints ─────────────────────────────────────
