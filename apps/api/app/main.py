@@ -268,25 +268,30 @@ def create_app() -> FastAPI:
 
     # Temporary Migration Endpoint to fix production DB without SSH access
     @app.get(f"{prefix}/debug/migrate", tags=["Health"])
-    def apply_migrations(stamp: str = None):
-        """Apply alembic migrations programmatically (synced in a thread to allow asyncio.run inside env.py)."""
-        import os
+    async def apply_migrations():
+        """Apply manual schema patches programmatically to fix production's missing columns."""
+        from app.core.db import AsyncSessionLocal
+        from sqlalchemy import text
         import traceback
-        from alembic.config import Config
-        from alembic import command
-        
-        ini_path = "alembic.ini"
-        if not os.path.exists(ini_path):
-            return {"status": "error", "message": "alembic.ini not found in current directory", "cwd": os.getcwd()}
-            
+
         try:
-            alembic_cfg = Config(ini_path)
-            if stamp:
-                command.stamp(alembic_cfg, stamp)
-                return {"status": "ok", "message": f"Successfully stamped database to '{stamp}'."}
-            else:
-                command.upgrade(alembic_cfg, "head")
-                return {"status": "ok", "message": "Successfully applied database migrations to head."}
+            async with AsyncSessionLocal() as session:
+                # Add ticket ratings
+                await session.execute(text("""
+                    ALTER TABLE tickets
+                    ADD COLUMN IF NOT EXISTS customer_rating INTEGER,
+                    ADD COLUMN IF NOT EXISTS customer_feedback TEXT;
+                """))
+                
+                # Add short IDs
+                await session.execute(text("""
+                    ALTER TABLE shops ADD COLUMN IF NOT EXISTS short_id VARCHAR(12);
+                    ALTER TABLE customers ADD COLUMN IF NOT EXISTS short_id VARCHAR(10);
+                    ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS short_id VARCHAR(10);
+                """))
+                
+                await session.commit()
+            return {"status": "ok", "message": "Successfully applied raw DB schema patches for missing columns."}
         except Exception as e:
             return {"status": "error", "message": str(e), "traceback": traceback.format_exc()}
 
