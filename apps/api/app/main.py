@@ -268,7 +268,7 @@ def create_app() -> FastAPI:
 
     # Temporary Migration Endpoint to fix production DB without SSH access
     @app.get(f"{prefix}/debug/migrate", tags=["Health"])
-    def apply_migrations():
+    def apply_migrations(stamp: str = None):
         """Apply alembic migrations programmatically (synced in a thread to allow asyncio.run inside env.py)."""
         import os
         import traceback
@@ -281,8 +281,12 @@ def create_app() -> FastAPI:
             
         try:
             alembic_cfg = Config(ini_path)
-            command.upgrade(alembic_cfg, "head")
-            return {"status": "ok", "message": "Successfully applied database migrations to head."}
+            if stamp:
+                command.stamp(alembic_cfg, stamp)
+                return {"status": "ok", "message": f"Successfully stamped database to '{stamp}'."}
+            else:
+                command.upgrade(alembic_cfg, "head")
+                return {"status": "ok", "message": "Successfully applied database migrations to head."}
         except Exception as e:
             return {"status": "error", "message": str(e), "traceback": traceback.format_exc()}
 
