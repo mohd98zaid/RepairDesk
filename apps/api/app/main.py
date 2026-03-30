@@ -276,11 +276,12 @@ def create_app() -> FastAPI:
 
         try:
             async with AsyncSessionLocal() as session:
-                # Add ticket ratings
+                # Add ticket ratings and warranty
                 await session.execute(text("""
                     ALTER TABLE tickets
                     ADD COLUMN IF NOT EXISTS customer_rating INTEGER,
-                    ADD COLUMN IF NOT EXISTS customer_feedback TEXT;
+                    ADD COLUMN IF NOT EXISTS customer_feedback TEXT,
+                    ADD COLUMN IF NOT EXISTS warranty_days INTEGER;
                 """))
                 
                 # Add short IDs
