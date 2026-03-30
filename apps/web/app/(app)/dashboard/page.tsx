@@ -78,38 +78,68 @@ export default function DashboardPage() {
         try {
             const todayDate = new Date();
             const today = todayDate.toISOString().split('T')[0];
-            const monthStartDate = new Date(todayDate.getFullYear(), todayDate.getMonth(), 1);
-            const monthStart = monthStartDate.toISOString().split('T')[0];
 
-            let ticketRes, allTicketsRes, deliveredTodayRes, invRes, invAllRes, revenueRes;
+            // Use allSettled so a single failing endpoint doesn't crash the whole dashboard.
+            // This is critical for Render's free tier which cold-starts and may time out.
+            const [
+                ticketRes,
+                allTicketsRes,
+                deliveredTodayRes,
+                invRes,
+                invAllRes,
+                revenueRes,
+            ] = await Promise.allSettled([
+                ticketsApi.list({ per_page: 5 }),
+                ticketsApi.list({ per_page: 100 }),
+                ticketsApi.list({ status: "DELIVERED", from_date: today, per_page: 100 }),
+                inventoryApi.list({ per_page: 1 }),
+                inventoryApi.list({ per_page: 100 }),
+                reportsApi.revenueBreakdown(),
+            ]);
 
-            try { ticketRes = await ticketsApi.list({ per_page: 5 }); } catch (e: any) { console.error("TICKETS 5 FAIL", e.response?.data); throw e; }
-            try { allTicketsRes = await ticketsApi.list({ per_page: 100 }); } catch (e: any) { console.error("TICKETS 100 FAIL", e.response?.data); throw e; }
-            try { deliveredTodayRes = await ticketsApi.list({ status: "DELIVERED", from_date: today, per_page: 100 }); } catch (e: any) { console.error("TODAY FAIL", e.response?.data); throw e; }
-            try { invRes = await inventoryApi.list({ per_page: 1 }); } catch (e: any) { console.error("INV 1 FAIL", e.response?.data); throw e; }
-            try { invAllRes = await inventoryApi.list({ per_page: 100 }); } catch (e: any) { console.error("INV 100 FAIL", e.response?.data); throw e; }
-            try { revenueRes = await reportsApi.revenueBreakdown(); } catch (e: any) { console.error("REVENUE FAIL", e.response?.data); throw e; }
+            // If the primary ticket/auth calls failed, surface the error
+            if (ticketRes.status === "rejected" || allTicketsRes.status === "rejected") {
+                console.error("Critical dashboard data failed:", ticketRes, allTicketsRes);
+                setError(true);
+                return;
+            }
 
-            const open = allTicketsRes.items.filter((t: { status: string }) =>
+            const allItems = allTicketsRes.value.items ?? [];
+            const open = allItems.filter((t: { status: string }) =>
                 ["RECEIVED", "IN_PROGRESS", "WAITING_PARTS"].includes(t.status)
             ).length;
-            const ready = allTicketsRes.items.filter((t: { status: string }) => t.status === "READY").length;
-            const resolved_today = deliveredTodayRes.items.length;
+            const ready = allItems.filter((t: { status: string }) => t.status === "READY").length;
+            const resolved_today = deliveredTodayRes.status === "fulfilled"
+                ? deliveredTodayRes.value.items.length
+                : 0;
 
             // Collect low stock items for detail panel
-            const lowItems: LowStockItem[] = (invAllRes.items || []).filter(
+            const allInvItems = invAllRes.status === "fulfilled" ? (invAllRes.value.items || []) : [];
+            const lowItems: LowStockItem[] = allInvItems.filter(
                 (item: LowStockItem) => item.quantity <= (item.low_stock_threshold ?? 5)
             );
             setLowStockItems(lowItems.slice(0, 8));
+
+            const lowStockCount = invRes.status === "fulfilled"
+                ? (invRes.value.low_stock_count ?? lowItems.length)
+                : lowItems.length;
+
+            const totalRevenue = revenueRes.status === "fulfilled"
+                ? revenueRes.value.total_revenue
+                : "0";
+
+            if (revenueRes.status === "rejected") {
+                console.warn("Revenue breakdown failed (non-critical):", revenueRes.reason);
+            }
 
             setKpi({
                 open,
                 ready,
                 resolved_today,
-                total_revenue: revenueRes.total_revenue,
-                low_stock: invRes.low_stock_count ?? lowItems.length,
+                total_revenue: totalRevenue,
+                low_stock: lowStockCount,
             });
-            setRecentTickets(ticketRes.items.slice(0, 5));
+            setRecentTickets(ticketRes.value.items.slice(0, 5));
         } catch (err) {
             console.error("Dashboard load failed:", err);
             setError(true);

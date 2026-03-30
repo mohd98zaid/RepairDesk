@@ -121,8 +121,13 @@ export function getApiClient(): AxiosInstance {
             }
 
             // --- Offline Mutation Interception ---
-            if (!error.response && error.config && error.request) {
-                // Network error (server down, or offline)
+            // Only queue mutations when the browser is GENUINELY offline.
+            // We must NOT intercept real server errors (CORS blocks, 5xx, cold-start
+            // timeouts) that also arrive as network-level failures with no response.
+            const isGenuinelyOffline =
+                typeof navigator !== "undefined" && !navigator.onLine;
+
+            if (!error.response && error.config && error.request && isGenuinelyOffline) {
                 const method = error.config.method?.toUpperCase() || "";
                 const url = error.config.url || "";
                 const isAuthRoute = url.includes("auth") || url.includes("login") || url.includes("refresh");
@@ -132,7 +137,7 @@ export function getApiClient(): AxiosInstance {
                         return Promise.reject(error);
                     }
 
-                    // It's a mutation that failed due to a network error.
+                    // It's a mutation that failed because the device is offline — queue it.
                     await queueMutation(error.config);
 
                     // Reject with a special flag so the UI knows it was queued optimistically
