@@ -91,6 +91,7 @@ function useTheme() {
         const isDark = saved !== 'light';
         setDark(isDark);
         document.documentElement.classList.toggle('dark', isDark);
+        document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
     }, []);
     function toggle() {
         const next = !dark;
@@ -98,6 +99,8 @@ function useTheme() {
         localStorage.setItem('theme', next ? 'dark' : 'light');
         document.documentElement.classList.toggle('dark', next);
         document.documentElement.style.colorScheme = next ? 'dark' : 'light';
+        // Notify other tabs/pages (e.g. login page) of theme change
+        try { new BroadcastChannel('theme').postMessage(next ? 'dark' : 'light'); } catch { /* ignore */ }
     }
     return { dark, toggle };
 }
@@ -495,11 +498,11 @@ function SessionEjectedModal({ onDismiss }: { onDismiss: () => void }) {
 
 // ── Session Heartbeat Hook ────────────────────────────────────
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-const HEARTBEAT_INTERVAL_MS = 45_000; // 45 seconds
-// Delay before the first heartbeat — long enough for the browser to commit
-// the httpOnly cookie from a fresh login, preventing false "Session Terminated"
-// alerts on first mount.
-const HEARTBEAT_WARMUP_MS = 60_000; // 60 seconds
+// Poll every 15 seconds so admin session kills take effect quickly
+const HEARTBEAT_INTERVAL_MS = 15_000;
+// Delay before the very first heartbeat — gives the browser time to commit
+// the httpOnly cookie from a fresh login (prevents false evictions on mount).
+const HEARTBEAT_WARMUP_MS = 5_000;
 
 function useSessionHeartbeat(onEvicted: () => void) {
     const onEvictedRef = useRef(onEvicted);
@@ -510,21 +513,6 @@ function useSessionHeartbeat(onEvicted: () => void) {
 
         async function heartbeat() {
             if (destroyed) return;
-
-            // Skip heartbeat if the stored access token is still valid —
-            // no need to hit the server if we know the session is alive.
-            try {
-                const raw = localStorage.getItem('repairdesk-auth');
-                if (raw) {
-                    const { state } = JSON.parse(raw);
-                    const token: string | null = state?.accessToken ?? null;
-                    if (token) {
-                        const payload = JSON.parse(atob(token.split('.')[1]));
-                        // If token still has > 30 s left, skip the network call
-                        if (payload.exp && (payload.exp - Date.now() / 1000) > 30) return;
-                    }
-                }
-            } catch { /* ignore parse errors */ }
 
             try {
                 const res = await fetch(`${API_URL}/auth/refresh`, {
@@ -542,14 +530,20 @@ function useSessionHeartbeat(onEvicted: () => void) {
         }
 
         const interval = setInterval(heartbeat, HEARTBEAT_INTERVAL_MS);
-        // Delay the first warmup check — avoids false evictions immediately
-        // after a fresh login before the cookie is properly committed.
         const warmup = setTimeout(heartbeat, HEARTBEAT_WARMUP_MS);
+
+        // Also listen for session-kill BroadcastChannel messages (cross-tab)
+        let bc: BroadcastChannel | null = null;
+        try {
+            bc = new BroadcastChannel('session_killed');
+            bc.onmessage = () => { if (!destroyed) onEvictedRef.current(); };
+        } catch { /* ignore — not supported in all browsers */ }
 
         return () => {
             destroyed = true;
             clearInterval(interval);
             clearTimeout(warmup);
+            bc?.close();
         };
     }, []);
 }

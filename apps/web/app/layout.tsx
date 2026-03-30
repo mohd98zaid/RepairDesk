@@ -32,9 +32,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        {/* ── Theme initializer: runs before paint to avoid flash ── */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('theme');var isDark=t!=='light';document.documentElement.classList.toggle('dark',isDark);document.documentElement.style.colorScheme=isDark?'dark':'light';}catch(e){}})();`,
+          }}
+        />
       </head>
       <body className="min-h-screen bg-background font-sans antialiased" suppressHydrationWarning>
         {children}
@@ -47,6 +53,17 @@ export default function RootLayout({
               });
             });
           }
+        `}</Script>
+        {/* Theme BroadcastChannel relay — keeps auth pages in sync when toggled from AppShell */}
+        <Script id="theme-relay" strategy="afterInteractive">{`
+          try {
+            var bc = new BroadcastChannel('theme');
+            bc.onmessage = function(e) {
+              var isDark = e.data === 'dark';
+              document.documentElement.classList.toggle('dark', isDark);
+              document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+            };
+          } catch(e) {}
         `}</Script>
       </body>
     </html>

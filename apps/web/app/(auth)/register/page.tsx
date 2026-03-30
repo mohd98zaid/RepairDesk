@@ -3,10 +3,10 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Wrench, Eye, EyeOff, Loader2, ArrowLeft, Mail, CheckCircle2 } from "lucide-react";
+import { Wrench, Eye, EyeOff, Loader2, ArrowLeft, Mail, CheckCircle2, Sun, Moon } from "lucide-react";
 import { api, getErrorMessage } from "@/lib/api/client";
 import { useAuthStore } from "@/store/authStore";
 import type { AuthUser } from "@/types";
@@ -49,6 +49,32 @@ export default function RegisterPage() {
     const [showPassword, setShowPassword] = useState(false);
     const [serverError, setServerError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+
+    // Dark/light mode
+    const [dark, setDark] = useState(true);
+    useEffect(() => {
+        const saved = localStorage.getItem('theme');
+        setDark(saved !== 'light');
+        try {
+            const bc = new BroadcastChannel('theme');
+            bc.onmessage = (e) => {
+                const isDark = e.data === 'dark';
+                setDark(isDark);
+                document.documentElement.classList.toggle('dark', isDark);
+                document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+            };
+            return () => bc.close();
+        } catch { /* ignore */ }
+    }, []);
+
+    function toggleTheme() {
+        const next = !dark;
+        setDark(next);
+        localStorage.setItem('theme', next ? 'dark' : 'light');
+        document.documentElement.classList.toggle('dark', next);
+        document.documentElement.style.colorScheme = next ? 'dark' : 'light';
+        try { new BroadcastChannel('theme').postMessage(next ? 'dark' : 'light'); } catch { /* ignore */ }
+    }
 
     // Form: Step 1
     const {
@@ -139,6 +165,16 @@ export default function RegisterPage() {
                 <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl" />
                 <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-violet-600/20 rounded-full blur-3xl" />
             </div>
+
+            {/* Theme toggle button — top right */}
+            <button
+                onClick={toggleTheme}
+                className="absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-lg bg-muted border border-border text-muted-foreground hover:text-foreground transition z-10"
+                title={dark ? 'Switch to Light mode' : 'Switch to Dark mode'}
+                id="register-theme-toggle"
+            >
+                {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
 
             <div className="relative w-full max-w-md">
                 <div className="flex items-center gap-3 mb-8 justify-center">

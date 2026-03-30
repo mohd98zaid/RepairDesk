@@ -24,11 +24,32 @@ export interface TicketMessageData {
   shopName?: string;
 }
 
+// ── Emoji Safe Definitions ──
+// We use String.fromCodePoint at runtime to absolutely guarantee that 
+// file encoding, bundlers, and web servers cannot corrupt the emoji characters.
+const EMOJI = {
+  check: String.fromCodePoint(0x2705),    // ✅
+  ticket: String.fromCodePoint(0x1F3AB),  // 🎫
+  phone: String.fromCodePoint(0x1F4F1),   // 📱
+  wrench: String.fromCodePoint(0x1F527),  // 🔧
+  money: String.fromCodePoint(0x1F4B0),   // 💰
+  link: String.fromCodePoint(0x1F517),    // 🔗
+  pray: String.fromCodePoint(0x1F64F),    // 🙏
+  bell: String.fromCodePoint(0x1F514),    // 🔔
+  pin: String.fromCodePoint(0x1F4CC),     // 📌
+  speech: String.fromCodePoint(0x1F4AC),  // 💬
+  star: String.fromCodePoint(0x2B50),     // ⭐
+  down: String.fromCodePoint(0x1F447),    // 👇
+  em_dash: String.fromCodePoint(0x2014),  // —
+};
+
+
+
 const STATUS_LABELS: Record<string, string> = {
   RECEIVED: "Received",
   IN_PROGRESS: "In Progress",
   WAITING_PARTS: "Waiting on Parts",
-  READY: "Ready for Pickup ✅",
+  READY: `Ready for Pickup ${EMOJI.check}`,
   DELIVERED: "Delivered",
   CANCELLED: "Cancelled",
 };
@@ -36,21 +57,20 @@ const STATUS_LABELS: Record<string, string> = {
 /** Builds the new ticket confirmation message */
 export function buildNewTicketMessage(data: TicketMessageData, appUrl: string): string {
   const ticketId = `RD-${String(data.ticketNumber).padStart(5, "0")}`;
-  const qr = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(data.ticketId)}`;
   const lines = [
-    `✅ *Repair Ticket Confirmed!*`,
+    `${EMOJI.check} *Repair Ticket Confirmed!*`,
     ``,
     `Hi ${data.customerName || "there"},`,
     `Your device has been received at our repair shop.`,
     ``,
-    `🎫 *Ticket ID:* ${ticketId}`,
-    `📱 *Device:* ${data.deviceType}${data.deviceModel ? ` — ${data.deviceModel}` : ""}`,
-    `🔧 *Issue:* ${data.reportedIssue}`,
-    ...(data.estimatedCost ? [`💰 *Estimated Cost:* Rs. ${data.estimatedCost}`] : []),
+    `${EMOJI.ticket} *Ticket ID:* ${ticketId}`,
+    `${EMOJI.phone} *Device:* ${data.deviceType}${data.deviceModel ? ` ${EMOJI.em_dash} ${data.deviceModel}` : ""}`,
+    `${EMOJI.wrench} *Issue:* ${data.reportedIssue}`,
+    ...(data.estimatedCost ? [`${EMOJI.money} *Estimated Cost:* Rs. ${data.estimatedCost}`] : []),
     ``,
-    `🔗 *Track your repair:* ${appUrl}/feedback/${data.ticketId}`,
+    `${EMOJI.link} *Track your repair:* ${appUrl}/feedback/${data.ticketId}`,
     ``,
-    `We'll keep you updated on the progress. Thank you! 🙏`,
+    `We'll keep you updated on the progress. Thank you! ${EMOJI.pray}`,
   ];
   return lines.join("\n");
 }
@@ -60,18 +80,18 @@ export function buildStatusUpdateMessage(data: TicketMessageData, notes?: string
   const ticketId = `RD-${String(data.ticketNumber).padStart(5, "0")}`;
   const statusLabel = STATUS_LABELS[data.status] ?? data.status.replace(/_/g, " ");
   const lines = [
-    `🔔 *Repair Update — ${ticketId}*`,
+    `${EMOJI.bell} *Repair Update ${EMOJI.em_dash} ${ticketId}*`,
     ``,
     `Hi ${data.customerName || "there"},`,
     `Your repair status has been updated.`,
     ``,
-    `🎫 *Ticket:* ${ticketId}`,
-    `📱 *Device:* ${data.deviceType}${data.deviceModel ? ` — ${data.deviceModel}` : ""}`,
-    `📌 *New Status:* ${statusLabel}`,
-    ...(notes ? [`💬 *Note:* ${notes}`] : []),
-    ...(data.finalCost ? [`💰 *Final Cost:* Rs. ${data.finalCost}`] : []),
+    `${EMOJI.ticket} *Ticket:* ${ticketId}`,
+    `${EMOJI.phone} *Device:* ${data.deviceType}${data.deviceModel ? ` ${EMOJI.em_dash} ${data.deviceModel}` : ""}`,
+    `${EMOJI.pin} *New Status:* ${statusLabel}`,
+    ...(notes ? [`${EMOJI.speech} *Note:* ${notes}`] : []),
+    ...(data.finalCost ? [`${EMOJI.money} *Final Cost:* Rs. ${data.finalCost}`] : []),
     ``,
-    `Thank you for your patience! 🙏`,
+    `Thank you for your patience! ${EMOJI.pray}`,
   ];
   return lines.join("\n");
 }
@@ -80,29 +100,36 @@ export function buildStatusUpdateMessage(data: TicketMessageData, notes?: string
 export function buildFeedbackMessage(data: TicketMessageData, appUrl: string): string {
   const ticketId = `RD-${String(data.ticketNumber).padStart(5, "0")}`;
   const lines = [
-    `⭐ *How did we do, ${data.customerName || "there"}?*`,
+    `${EMOJI.star} *How did we do, ${data.customerName || "there"}?*`,
     ``,
     `Your device (${ticketId}) has been delivered.`,
     `We'd love to hear your feedback!`,
     ``,
-    `👇 *Rate your experience (takes 10 seconds):*`,
+    `${EMOJI.down} *Rate your experience (takes 10 seconds):*`,
     `${appUrl}/feedback/${data.ticketId}`,
     ``,
-    `Your rating helps us improve. Thank you! 🙏`,
+    `Your rating helps us improve. Thank you! ${EMOJI.pray}`,
   ];
   return lines.join("\n");
 }
 
-/** Opens WhatsApp with a pre-filled message */
+/** Opens WhatsApp with a pre-formatted message. */
 export function openWhatsApp(phone: string, message: string): void {
   const normalized = normalizePhone(phone);
-  const url = `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
-  window.open(url, "_blank", "noopener,noreferrer");
+  // Encode the entire string correctly here
+  const url = `https://api.whatsapp.com/send?phone=${normalized}&text=${encodeURIComponent(message)}`;
+  
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 /** Opens the native SMS app with a pre-filled message */
 export function openSMS(phone: string, message: string): void {
-  // sms: URI — body param works on most Android/iOS devices
   const url = `sms:${phone}?body=${encodeURIComponent(message)}`;
   window.location.href = url;
 }
