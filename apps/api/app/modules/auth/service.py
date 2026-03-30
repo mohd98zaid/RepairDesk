@@ -168,12 +168,12 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
         device_limit = int(device_limit_str) if device_limit_str and device_limit_str.isdigit() else 1
 
     # Collect all active session keys for this user
-    all_session_keys: list[bytes] = []
-    cursor = b'0'
-    while cursor:
+    all_session_keys: list[str] = []
+    cursor = "0"
+    while True:
         cursor, keys = await redis.scan(cursor=cursor, match=f"refresh:{user.id}:*")
         all_session_keys.extend(keys)
-        if cursor == b'0':
+        if cursor == "0" or not cursor:
             break
 
     active_sessions = len(all_session_keys)
@@ -324,12 +324,12 @@ async def reset_password(token: str, new_password: str, db: AsyncSession) -> Non
     await redis.delete(f"pwreset:{token}")
     
     # Delete all active sessions to terminate compromised logins
-    cursor = b'0'
-    while cursor:
+    cursor = "0"
+    while True:
         cursor, keys = await redis.scan(cursor=cursor, match=f"refresh:{user_id_str}*")
         if keys:
             await redis.delete(*keys)
-        if cursor == b'0':
+        if cursor == "0" or not cursor:
             break
 
 
@@ -382,12 +382,12 @@ async def force_logout_others_and_login(email: str, otp: str, password: str, db:
     await redis.delete(f"force_logout_otp:{email}")
 
     # Evict ALL existing sessions for this user
-    cursor = b'0'
-    while cursor:
+    cursor = "0"
+    while True:
         cursor, keys = await redis.scan(cursor=cursor, match=f"refresh:{user.id}:*")
         if keys:
             await redis.delete(*keys)
-        if cursor == b'0':
+        if cursor == "0" or not cursor:
             break
 
     # Check shop status
