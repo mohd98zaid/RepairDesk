@@ -28,61 +28,72 @@ async def has_feature(shop_id: uuid.UUID, feature_key: str, db: AsyncSession) ->
     Check if a shop has access to a feature and return its value.
     Returns the feature value string, or None if not available.
 
+    Gracefully returns None if billing tables don't exist yet (unmigrated DB),
+    so core ticket/inventory functionality continues to work.
+
     Usage:
         val = await has_feature(shop_id, "ticket_limit", db)
-        if val is None:  → feature not available
+        if val is None:  → feature not available / no restriction
         if val == "unlimited" → no limit
         if val.isdigit() → numeric limit
     """
-    # Get active subscription with plan features
-    sub_result = await db.execute(
-        select(Subscription)
-        .options(selectinload(Subscription.plan).selectinload(Plan.features).selectinload(PlanFeature.feature))
-        .where(
-            Subscription.shop_id == shop_id,
-            Subscription.status == "active",
-            Subscription.current_period_end > datetime.now(timezone.utc),
+    try:
+        # Get active subscription with plan features
+        sub_result = await db.execute(
+            select(Subscription)
+            .options(selectinload(Subscription.plan).selectinload(Plan.features).selectinload(PlanFeature.feature))
+            .where(
+                Subscription.shop_id == shop_id,
+                Subscription.status == "active",
+                Subscription.current_period_end > datetime.now(timezone.utc),
+            )
         )
-    )
-    subscription = sub_result.scalar_one_or_none()
+        subscription = sub_result.scalar_one_or_none()
 
-    if not subscription:
-        # No active subscription — check if there's a free/default plan
+        if not subscription:
+            # No active subscription — check if there's a free/default plan
+            return await _get_default_feature_value(feature_key, db)
+
+        # Look up feature in plan
+        for pf in subscription.plan.features:
+            if pf.feature.key == feature_key and pf.feature.is_active:
+                return pf.value
+
+        # Feature not in plan — check default
         return await _get_default_feature_value(feature_key, db)
-
-    # Look up feature in plan
-    for pf in subscription.plan.features:
-        if pf.feature.key == feature_key and pf.feature.is_active:
-            return pf.value
-
-    # Feature not in plan — check default
-    return await _get_default_feature_value(feature_key, db)
+    except Exception:
+        # Billing tables may not exist yet on this deployment.
+        # Return None so callers treat it as "no restriction".
+        return None
 
 
 async def _get_default_feature_value(feature_key: str, db: AsyncSession) -> str | None:
     """Get the default value for a feature (from the free plan or feature default)."""
-    # Try to find the free plan
-    free_plan_result = await db.execute(
-        select(Plan)
-        .options(selectinload(Plan.features).selectinload(PlanFeature.feature))
-        .where(Plan.slug == "free", Plan.is_active == True)
-    )
-    free_plan = free_plan_result.scalar_one_or_none()
+    try:
+        # Try to find the free plan
+        free_plan_result = await db.execute(
+            select(Plan)
+            .options(selectinload(Plan.features).selectinload(PlanFeature.feature))
+            .where(Plan.slug == "free", Plan.is_active == True)
+        )
+        free_plan = free_plan_result.scalar_one_or_none()
 
-    if free_plan:
-        for pf in free_plan.features:
-            if pf.feature.key == feature_key and pf.feature.is_active:
-                return pf.value
+        if free_plan:
+            for pf in free_plan.features:
+                if pf.feature.key == feature_key and pf.feature.is_active:
+                    return pf.value
 
-    # Fall back to feature's default_value
-    feat_result = await db.execute(
-        select(Feature).where(Feature.key == feature_key, Feature.is_active == True)
-    )
-    feature = feat_result.scalar_one_or_none()
-    if feature:
-        return feature.default_value
+        # Fall back to feature's default_value
+        feat_result = await db.execute(
+            select(Feature).where(Feature.key == feature_key, Feature.is_active == True)
+        )
+        feature = feat_result.scalar_one_or_none()
+        if feature:
+            return feature.default_value
 
-    return None
+        return None
+    except Exception:
+        return None
 
 
 async def get_shop_features(shop_id: uuid.UUID, db: AsyncSession) -> dict[str, str]:
