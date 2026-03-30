@@ -266,6 +266,26 @@ def create_app() -> FastAPI:
             content={"status": "ok" if all_ok else "degraded", "checks": checks},
         )
 
+    # Temporary Migration Endpoint to fix production DB without SSH access
+    @app.get(f"{prefix}/debug/migrate", tags=["Health"])
+    def apply_migrations():
+        """Apply alembic migrations programmatically (synced in a thread to allow asyncio.run inside env.py)."""
+        import os
+        import traceback
+        from alembic.config import Config
+        from alembic import command
+        
+        ini_path = "alembic.ini"
+        if not os.path.exists(ini_path):
+            return {"status": "error", "message": "alembic.ini not found in current directory", "cwd": os.getcwd()}
+            
+        try:
+            alembic_cfg = Config(ini_path)
+            command.upgrade(alembic_cfg, "head")
+            return {"status": "ok", "message": "Successfully applied database migrations to head."}
+        except Exception as e:
+            return {"status": "error", "message": str(e), "traceback": traceback.format_exc()}
+
     return app
 
 
