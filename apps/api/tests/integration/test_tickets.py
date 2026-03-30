@@ -162,6 +162,12 @@ class TestGetTicket:
         resp = await client.get(f"{TICKETS_URL}/{uuid.uuid4()}", headers=headers)
         assert resp.status_code == 404
 
+    async def test_get_requires_auth(self, client: AsyncClient, sample_ticket):
+        tid = sample_ticket["id"]
+        # No headers provided
+        resp = await client.get(f"{TICKETS_URL}/{tid}")
+        assert resp.status_code == 401
+
 
 # ────────────────────────── Status Changes ──────────────────────────
 

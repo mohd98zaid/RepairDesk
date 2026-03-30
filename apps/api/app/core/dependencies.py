@@ -38,6 +38,8 @@ async def get_current_user(
     shop_id = payload.get("shop_id")
     role = payload.get("role")
 
+    session_id = payload.get("session_id")
+
     if not user_id or not shop_id or not role:
         raise UnauthorizedException("Token payload is incomplete.")
 
@@ -70,6 +72,7 @@ async def get_current_user(
         "shop_id": shop_id,
         "role": role,
         "shop_status": shop_status,
+        "session_id": session_id,
     }
 
 

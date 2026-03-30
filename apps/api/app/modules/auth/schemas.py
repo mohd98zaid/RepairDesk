@@ -72,3 +72,20 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
+
+
+class ForceLogoutOtpRequest(BaseModel):
+    email: EmailStr
+
+    @field_validator("email")
+    @classmethod
+    def must_be_gmail(cls, v: str) -> str:
+        if not v.lower().endswith("@gmail.com"):
+            raise ValueError("Only Gmail addresses (@gmail.com) are allowed.")
+        return v.lower()
+
+
+class ForceLogoutRequest(BaseModel):
+    email: EmailStr
+    otp: str
+    password: str

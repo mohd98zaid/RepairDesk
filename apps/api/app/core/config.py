@@ -66,6 +66,11 @@ class Settings(BaseSettings):
             elif self.database_url.startswith("postgresql://"):
                 self.database_url = self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
                 
+            # Enforce SSL connection defensively if running in production
+            if self.environment == "production" and "ssl=" not in self.database_url:
+                connector = "&" if "?" in self.database_url else "?"
+                self.database_url += f"{connector}ssl=require"
+                
         # Gracefully handle comma-separated strings for cors_origins
         if isinstance(self.cors_origins, str):
             # Clean up potential accidental brackets from invalid JSON strings
@@ -73,6 +78,11 @@ class Settings(BaseSettings):
             self.cors_origins = [
                 x.strip().strip("\"'") for x in cleaned.split(",") if x.strip()
             ]
+            
+        # Hardened CORS policy: disallow wildcard in production
+        if self.environment == "production":
+            if "*" in self.cors_origins or not self.cors_origins:
+                self.cors_origins = [self.frontend_url]
             
         return self
 

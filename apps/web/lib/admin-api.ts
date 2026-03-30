@@ -192,6 +192,16 @@ export async function exportTicketsCSV(shopId?: string) {
   URL.revokeObjectURL(url);
 }
 
+export async function getShopSessions(shopId: string) {
+  const res = await adminAxios.get(`/shops/${shopId}/sessions`);
+  return res.data as { total: number; sessions: SessionEntry[] };
+}
+
+export async function killShopSession(shopId: string, sessionKey: string) {
+  const res = await adminAxios.delete(`/shops/${shopId}/sessions/${sessionKey}`);
+  return res.data as { ok: boolean; message: string };
+}
+
 // ─── Types ───
 export interface ShopSummary {
   id: string; name: string; email: string; phone: string | null;
@@ -233,6 +243,18 @@ export interface SearchResult {
 
 export interface BroadcastEntry {
   id: string; title: string; message: string; type: string; sent_by: string; created_at: string;
+}
+
+export interface SessionEntry {
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  user_role: string;
+  session_id: string;
+  session_key: string;
+  ttl_seconds: number;
+  ttl_max: number;
+  created_ago: string;
 }
 
 // ─── Billing ───

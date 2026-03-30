@@ -56,7 +56,7 @@ export const ticketsApi = {
 
   presignImage: async (id: string, filename: string, content_type: string) => {
     const { data } = await api.post(`/tickets/${id}/images/presign`, { filename, content_type });
-    return data as { upload_url: string; object_key: string };
+    return data as { upload_url: string; object_key: string; form_data: Record<string, string> };
   },
 
   createCheckout: async (id: string, description: string) => {
@@ -95,6 +95,25 @@ export const ticketsApi = {
   removeCharge: async (id: string, charge_id: string) => {
     const { data } = await api.delete(`/tickets/${id}/charges/${charge_id}`);
     return data;
+  },
+
+  submitRating: async (id: string, rating: number, feedback?: string) => {
+    const { data } = await api.post(`/tickets/${id}/rating`, { rating, feedback });
+    return data as { ok: boolean; customer_rating: number; customer_feedback: string | null };
+  },
+
+  getPublicInfo: async (id: string) => {
+    // Public endpoint — use a plain fetch so no auth header is sent
+    const baseUrl = typeof window !== "undefined"
+      ? (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000")
+      : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
+    const res = await fetch(`${baseUrl}/tickets/${id}/public-info`);
+    if (!res.ok) throw new Error("Ticket not found");
+    return res.json() as Promise<{
+      id: string; ticket_number: number; device_type: string;
+      device_model: string | null; status: string;
+      customer_rating: number | null; customer_feedback: string | null;
+    }>;
   },
 };
 

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConflictException, UnauthorizedException
+from app.core.exceptions import ConflictException, UnauthorizedException, ForbiddenException
 from app.core.redis import get_redis
 from app.core.security import (
     create_access_token,
@@ -101,10 +101,12 @@ async def register_shop(data: RegisterRequest, db: AsyncSession) -> dict:
     await db.flush()
 
     # Issue tokens
+    session_id = str(uuid.uuid4())
     token_data = {
         "sub": str(user.id),
         "shop_id": str(shop.id),
         "role": user.role,
+        "session_id": session_id,
     }
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
@@ -112,7 +114,7 @@ async def register_shop(data: RegisterRequest, db: AsyncSession) -> dict:
     # Store refresh token in Redis
     redis = await get_redis()
     await redis.setex(
-        f"refresh:{user.id}",
+        f"refresh:{user.id}:{session_id}",
         60 * 60 * 24 * 7,  # 7 days in seconds
         refresh_token,
     )
@@ -151,20 +153,44 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
 
     # Update last_login_at
     user.last_login_at = datetime.now(timezone.utc)
+    
+    redis = await get_redis()
+    session_id = str(uuid.uuid4())
+    
+    # Enforce device limits
+    from app.modules.billing.service import has_feature
+    device_limit_str = await has_feature(user.shop_id, "device_limit", db)
+    
+    if device_limit_str in ("unlimited", "-1"):
+        device_limit = -1
+    else:
+        # Default is 1 for free plan
+        device_limit = int(device_limit_str) if device_limit_str and device_limit_str.isdigit() else 1
+    
+    cursor = b'0'
+    active_sessions = 0
+    while cursor:
+        cursor, keys = await redis.scan(cursor=cursor, match=f"refresh:{user.id}:*")
+        active_sessions += len(keys)
+        if cursor == b'0':
+            break
+
+    if device_limit != -1 and active_sessions >= device_limit:
+        raise ForbiddenException(f"Device limit reached. Your plan allows a maximum of {device_limit} active session(s). Please log out of another device or upgrade your plan.")
 
     token_data = {
         "sub": str(user.id),
         "shop_id": str(user.shop_id),
         "role": user.role,
         "shop_status": getattr(shop, "shop_status", "ACTIVE") if shop else "ACTIVE",
+        "session_id": session_id,
     }
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
 
-    # Store refresh token in Redis (overwrite existing)
-    redis = await get_redis()
+    # Store refresh token in Redis
     await redis.setex(
-        f"refresh:{user.id}",
+        f"refresh:{user.id}:{session_id}",
         60 * 60 * 24 * 7,
         refresh_token,
     )
@@ -193,8 +219,12 @@ async def refresh_access_token(refresh_token: str, db: AsyncSession) -> str:
         raise UnauthorizedException("Invalid token type.")
 
     user_id = payload.get("sub")
+    session_id = payload.get("session_id")
+    if not session_id:
+        raise UnauthorizedException("Invalid token payload: missing session_id")
+
     redis = await get_redis()
-    stored_token = await redis.get(f"refresh:{user_id}")
+    stored_token = await redis.get(f"refresh:{user_id}:{session_id}")
 
     if not stored_token or stored_token != refresh_token:
         raise UnauthorizedException("Refresh token has been revoked.")
@@ -209,14 +239,19 @@ async def refresh_access_token(refresh_token: str, db: AsyncSession) -> str:
         "sub": str(user.id),
         "shop_id": str(user.shop_id),
         "role": user.role,
+        "session_id": session_id,
     }
     return create_access_token(token_data)
 
 
-async def logout_user(user_id: str) -> None:
+async def logout_user(user_id: str, session_id: str | None = None) -> None:
     """Revoke the refresh token by deleting it from Redis."""
     redis = await get_redis()
-    await redis.delete(f"refresh:{user_id}")
+    if session_id:
+        await redis.delete(f"refresh:{user_id}:{session_id}")
+    else:
+        # Fallback
+        await redis.delete(f"refresh:{user_id}")
 
 
 async def forgot_password(email: str, db: AsyncSession) -> None:
@@ -238,9 +273,24 @@ async def forgot_password(email: str, db: AsyncSession) -> None:
     from app.modules.notifications.email import EmailService
     from app.core.config import settings
     
-    reset_link = f"{settings.frontend_url}/auth/reset-password?token={token}"
-    html = f"<p>Hello {user.full_name},</p><p>Click <a href='{reset_link}'>here</a> to reset your Password.</p><p>This link expires in 15 minutes.</p>"
-    await EmailService.send_email(user.email, "RepairDesk Password Reset", html)
+    reset_link = f"{settings.frontend_url}/reset-password?token={token}"
+    html = (
+        f"<div style='font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#0f172a;color:#e2e8f0;border-radius:16px'>"
+        f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:24px'>"
+        f"<div style='width:36px;height:36px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;font-size:18px'>R</div>"
+        f"<span style='font-size:18px;font-weight:700;color:#fff'>RepairDesk</span>"
+        f"</div>"
+        f"<h2 style='font-size:22px;font-weight:700;color:#fff;margin:0 0 10px'>Reset Your Password</h2>"
+        f"<p style='color:#94a3b8;margin:0 0 24px'>Hello {user.full_name}, you requested a password reset for your RepairDesk account.</p>"
+        f"<a href='{reset_link}' style='display:block;text-align:center;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-weight:700;font-size:15px;padding:14px 24px;border-radius:10px;text-decoration:none;margin-bottom:20px'>"
+        f"Reset Password</a>"
+        f"<p style='color:#475569;font-size:12px;margin:0'>This link expires in <strong style=color:#94a3b8>15 minutes</strong>. If you didn't request this, you can safely ignore this email.</p>"
+        f"<hr style='border:none;border-top:1px solid #1e293b;margin:24px 0'>"
+        f"<p style='color:#334155;font-size:11px;margin:0'>If the button doesn't work, copy this link: <br/><span style=color:#6366f1>{reset_link}</span></p>"
+        f"</div>"
+    )
+    await EmailService.send_email(user.email, "RepairDesk — Reset Your Password", html)
+
 
 
 async def reset_password(token: str, new_password: str, db: AsyncSession) -> None:
@@ -258,3 +308,107 @@ async def reset_password(token: str, new_password: str, db: AsyncSession) -> Non
     user.password_hash = hash_password(new_password)
     await db.flush()
     await redis.delete(f"pwreset:{token}")
+    
+    # Delete all active sessions to terminate compromised logins
+    cursor = b'0'
+    while cursor:
+        cursor, keys = await redis.scan(cursor=cursor, match=f"refresh:{user_id_str}*")
+        if keys:
+            await redis.delete(*keys)
+        if cursor == b'0':
+            break
+
+
+async def send_force_logout_otp(email: str, db: AsyncSession) -> None:
+    """
+    Send a 6-digit OTP to allow the user to force-logout all other sessions.
+    Uses a separate Redis namespace (force_logout_otp:) to avoid collision
+    with registration OTPs.
+    """
+    result = await db.execute(select(User).where(User.email == email, User.is_active == True))
+    user = result.scalar_one_or_none()
+    # Don't reveal whether the email exists
+    if not user:
+        return
+
+    import random
+    from app.modules.notifications.email import EmailService
+
+    otp = f"{random.randint(0, 999999):06d}"
+    redis = await get_redis()
+    await redis.setex(f"force_logout_otp:{email}", 60 * 10, otp)  # 10 minutes
+
+    html = (
+        f"<p>Hello {user.full_name},</p>"
+        f"<p>Someone is trying to <strong>force-logout all other devices</strong> on your RepairDesk account.</p>"
+        f"<p>Your one-time code is: <strong style='font-size:24px;letter-spacing:4px'>{otp}</strong></p>"
+        f"<p>This code expires in <strong>10 minutes</strong>. If this wasn't you, please secure your account immediately.</p>"
+    )
+    await EmailService.send_email(email, "RepairDesk — Force Logout OTP", html)
+
+
+async def force_logout_others_and_login(email: str, otp: str, password: str, db: AsyncSession) -> dict:
+    """
+    Verify the force-logout OTP + password, evict all existing sessions for this
+    user from Redis, then issue a brand-new session. Returns the same shape as login_user().
+    """
+    # Verify OTP
+    redis = await get_redis()
+    stored_otp = await redis.get(f"force_logout_otp:{email}")
+    if not stored_otp or stored_otp != otp:
+        raise UnauthorizedException("Invalid or expired OTP. Please request a new one.")
+
+    # Verify credentials
+    result = await db.execute(select(User).where(User.email == email, User.is_active == True))
+    user = result.scalar_one_or_none()
+    if not user or not verify_password(password, user.password_hash):
+        raise UnauthorizedException("Invalid email or password.")
+
+    # Consume OTP immediately to prevent replay
+    await redis.delete(f"force_logout_otp:{email}")
+
+    # Evict ALL existing sessions for this user
+    cursor = b'0'
+    while cursor:
+        cursor, keys = await redis.scan(cursor=cursor, match=f"refresh:{user.id}:*")
+        if keys:
+            await redis.delete(*keys)
+        if cursor == b'0':
+            break
+
+    # Check shop status
+    shop_result = await db.execute(select(Shop).where(Shop.id == user.shop_id))
+    shop = shop_result.scalar_one_or_none()
+    if shop:
+        shop_status = getattr(shop, "shop_status", "ACTIVE")
+        if shop_status == "BLOCKED":
+            raise UnauthorizedException("Your shop account has been blocked. Please contact support.")
+        if shop_status == "INACTIVE":
+            raise UnauthorizedException("Your shop account has been deactivated. Please contact support.")
+
+    # Update last_login_at
+    user.last_login_at = datetime.now(timezone.utc)
+
+    # Issue a fresh session
+    session_id = str(uuid.uuid4())
+    token_data = {
+        "sub": str(user.id),
+        "shop_id": str(user.shop_id),
+        "role": user.role,
+        "shop_status": getattr(shop, "shop_status", "ACTIVE") if shop else "ACTIVE",
+        "session_id": session_id,
+    }
+    access_token = create_access_token(token_data)
+    refresh_token = create_refresh_token(token_data)
+
+    await redis.setex(
+        f"refresh:{user.id}:{session_id}",
+        60 * 60 * 24 * 7,
+        refresh_token,
+    )
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "user": user,
+    }

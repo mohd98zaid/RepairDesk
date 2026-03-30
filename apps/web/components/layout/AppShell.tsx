@@ -26,7 +26,8 @@ import {
     Search,
     QrCode,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { MonitorSmartphone } from "lucide-react";
 import { isTokenExpired } from "@/lib/api/client";
 import { useAuthStore } from "@/store/authStore";
 import { api } from "@/lib/api/client";
@@ -46,6 +47,7 @@ const navItems = [
 const settingsItems = [
     { href: "/settings/shop", label: "Shop", icon: Store },
     { href: "/settings/team", label: "Team", icon: Users },
+    { href: "/settings/sessions", label: "Sessions", icon: MonitorSmartphone },
     { href: "/settings/activity", label: "Activity Log", icon: Activity },
 ];
 
@@ -428,6 +430,109 @@ function BlockedScreen() {
     );
 }
 
+// ── Session Ejection Modal ────────────────────────────────────
+function SessionEjectedModal({ onDismiss }: { onDismiss: () => void }) {
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 99999,
+            background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        }}>
+            <div style={{
+                background: '#13151f',
+                border: '1px solid rgba(239,68,68,0.4)',
+                borderRadius: 24,
+                padding: '40px 36px',
+                maxWidth: 420, width: '100%',
+                textAlign: 'center',
+                boxShadow: '0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(239,68,68,0.15)',
+                animation: 'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)',
+            }}>
+                {/* Icon */}
+                <div style={{
+                    width: 72, height: 72, borderRadius: '50%', margin: '0 auto 24px',
+                    background: 'rgba(239,68,68,0.12)',
+                    border: '2px solid rgba(239,68,68,0.3)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                    <MonitorSmartphone size={34} style={{ color: '#f87171' }} />
+                </div>
+
+                <h2 style={{ color: '#f87171', fontSize: 22, fontWeight: 800, marginBottom: 10 }}>
+                    Session Terminated
+                </h2>
+                <p style={{ color: '#94a3b8', fontSize: 14, lineHeight: 1.7, marginBottom: 8 }}>
+                    Your session on this device has been <strong style={{ color: '#e2e8f0' }}>remotely signed out</strong>.
+                    This may have been done by an administrator or by you from another device.
+                </p>
+                <p style={{ color: '#64748b', fontSize: 12, marginBottom: 32 }}>
+                    Please sign in again to continue.
+                </p>
+
+                <button
+                    onClick={onDismiss}
+                    style={{
+                        width: '100%', padding: '13px 0',
+                        background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                        border: 'none', borderRadius: 12,
+                        color: '#fff', fontSize: 15, fontWeight: 700,
+                        cursor: 'pointer', transition: 'opacity 0.2s',
+                    }}
+                    id="session-ejected-signin"
+                >
+                    Sign In Again
+                </button>
+            </div>
+            <style>{`
+                @keyframes slideUp {
+                    from { opacity: 0; transform: translateY(24px) scale(0.96); }
+                    to   { opacity: 1; transform: translateY(0) scale(1); }
+                }
+            `}</style>
+        </div>
+    );
+}
+
+// ── Session Heartbeat Hook ────────────────────────────────────
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const HEARTBEAT_INTERVAL_MS = 45_000; // 45 seconds
+
+function useSessionHeartbeat(onEvicted: () => void) {
+    const onEvictedRef = useRef(onEvicted);
+    useEffect(() => { onEvictedRef.current = onEvicted; }, [onEvicted]);
+
+    useEffect(() => {
+        let destroyed = false;
+
+        async function heartbeat() {
+            if (destroyed) return;
+            try {
+                const res = await fetch(`${API_URL}/auth/refresh`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}',
+                });
+                if (res.status === 401) {
+                    if (!destroyed) onEvictedRef.current();
+                }
+            } catch {
+                // Network offline — silently skip
+            }
+        }
+
+        const interval = setInterval(heartbeat, HEARTBEAT_INTERVAL_MS);
+        // Run once quickly to catch an immediate admin kill
+        const warmup = setTimeout(heartbeat, 5_000);
+
+        return () => {
+            destroyed = true;
+            clearInterval(interval);
+            clearTimeout(warmup);
+        };
+    }, []);
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
@@ -438,6 +543,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const [mounted, setMounted] = useState(false);
     const [shopStatus, setShopStatus] = useState<string>('ACTIVE');
     const { dark, toggle: toggleTheme } = useTheme();
+    const [sessionEjected, setSessionEjected] = useState(false);
+
+    const handleEviction = useCallback(() => {
+        setSessionEjected(true);
+    }, []);
+
+    useSessionHeartbeat(handleEviction);
 
     useEffect(() => {
         setMounted(true);
@@ -640,6 +752,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </main>
 
             {qrOpen && <QRScannerModal onClose={() => setQrOpen(false)} />}
+
+            {/* Session Ejection Modal */}
+            {sessionEjected && (
+                <SessionEjectedModal
+                    onDismiss={() => {
+                        setSessionEjected(false);
+                        clearAuth();
+                        router.push('/login');
+                    }}
+                />
+            )}
         </div>
     );
 }

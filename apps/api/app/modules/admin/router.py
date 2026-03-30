@@ -1090,3 +1090,126 @@ async def get_shop_inventory(
             for i in items
         ],
     }
+
+
+# ─────────────────────────── Shop — Active Sessions ───────────────────────────
+
+@router.get("/shops/{shop_id}/sessions")
+async def get_shop_sessions(
+    shop_id: uuid.UUID,
+    admin: dict = AdminUser,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    List all active Redis sessions for every user in this shop.
+    Returns user info, session_id, TTL, and a human-readable age string.
+    """
+    from app.core.redis import get_redis
+
+    # All active users in this shop
+    user_result = await db.execute(
+        select(User).where(User.shop_id == shop_id, User.is_active == True)
+    )
+    users = user_result.scalars().all()
+
+    redis = await get_redis()
+    sessions: list[dict] = []
+    MAX_TTL = 60 * 60 * 24 * 7  # 7 days (the refresh token lifetime)
+
+    for user in users:
+        cursor = b"0"
+        while cursor:
+            cursor, keys = await redis.scan(
+                cursor=cursor, match=f"refresh:{user.id}:*"
+            )
+            for key in keys:
+                # key looks like  b"refresh:<user_id>:<session_id>"
+                key_str = key.decode() if isinstance(key, bytes) else key
+                parts = key_str.split(":")
+                session_id = parts[-1] if len(parts) >= 3 else key_str
+
+                ttl = await redis.ttl(key)
+                if ttl < 0:
+                    # Key has already expired or has no TTL — skip
+                    continue
+
+                # Approximate age: how long ago the session was created
+                # (MAX_TTL - remaining_ttl)
+                age_seconds = MAX_TTL - ttl
+                if age_seconds < 60:
+                    created_ago = "just now"
+                elif age_seconds < 3600:
+                    created_ago = f"{age_seconds // 60}m ago"
+                elif age_seconds < 86400:
+                    created_ago = f"{age_seconds // 3600}h ago"
+                else:
+                    created_ago = f"{age_seconds // 86400}d ago"
+
+                sessions.append({
+                    "user_id": str(user.id),
+                    "user_name": user.full_name,
+                    "user_email": user.email,
+                    "user_role": user.role,
+                    "session_id": session_id,
+                    "session_key": f"{user.id}:{session_id}",
+                    "ttl_seconds": ttl,
+                    "ttl_max": MAX_TTL,
+                    "created_ago": created_ago,
+                })
+            if cursor == b"0":
+                break
+
+    # Sort newest first (smallest ttl = was refreshed most recently... actually
+    # largest ttl means most recently issued, so sort descending by ttl)
+    sessions.sort(key=lambda s: s["ttl_seconds"], reverse=True)
+
+    return {"total": len(sessions), "sessions": sessions}
+
+
+@router.delete("/shops/{shop_id}/sessions/{session_key:path}", status_code=200)
+async def kill_shop_session(
+    shop_id: uuid.UUID,
+    session_key: str,
+    admin: dict = AdminUser,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Force-logout a specific session by deleting its Redis refresh token key.
+    session_key format: '{user_id}:{session_id}'
+    """
+    from app.core.redis import get_redis
+
+    # Validate that the user belongs to this shop (security check)
+    parts = session_key.split(":")
+    if len(parts) < 2:
+        raise HTTPException(status_code=422, detail="Invalid session_key format. Expected '{user_id}:{session_id}'.")
+
+    user_id_str = parts[0]
+    try:
+        user_uuid = uuid.UUID(user_id_str)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid user_id in session_key.")
+
+    user_result = await db.execute(
+        select(User).where(User.id == user_uuid, User.shop_id == shop_id)
+    )
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Session not found or does not belong to this shop.")
+
+    redis = await get_redis()
+    redis_key = f"refresh:{session_key}"
+    deleted = await redis.delete(redis_key)
+
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="Session not found or already expired.")
+
+    _emit_audit(
+        "KILL_SESSION",
+        admin.get("email", "admin"),
+        str(shop_id),
+        f"Killed session for {user.email} (session: {session_key})",
+    )
+
+    return {"ok": True, "message": f"Session for {user.email} has been terminated."}
+

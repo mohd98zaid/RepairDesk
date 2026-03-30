@@ -44,14 +44,42 @@ def get_public_minio_client() -> Minio:
     )
 
 
-def generate_presigned_upload_url(object_key: str, content_type: str, expires_hours: int = 1) -> str:
+from minio.datatypes import PostPolicy
+from datetime import datetime, timezone
+
+def generate_presigned_post_policy(object_key: str, content_type: str, expires_hours: int = 1) -> dict:
+    """Generate a secure S3 Post Policy for file uploads enforcing constraints."""
     client = get_public_minio_client()
-    url = client.presigned_put_object(
-        bucket_name=settings.minio_bucket,
-        object_name=object_key,
-        expires=timedelta(hours=expires_hours),
+    now = datetime.now(timezone.utc)
+    
+    policy = PostPolicy(
+        settings.minio_bucket,
+        now + timedelta(hours=expires_hours)
     )
-    return url
+    
+    # Require precise object key
+    policy.add_equals_condition("key", object_key)
+    
+    # Content-Type constraints
+    if content_type.startswith("image/"):
+        policy.add_starts_with_condition("Content-Type", "image/")
+    else:
+        policy.add_equals_condition("Content-Type", content_type)
+        
+    # Strictly enforce 5MB maximum file size (1 byte to 5,242,880 bytes)
+    policy.add_content_length_range_condition(1, 5 * 1024 * 1024)
+    
+    form_data = client.presigned_post_policy(policy)
+    
+    endpoint = "localhost:9000" if settings.minio_endpoint == "minio:9000" else settings.minio_endpoint
+    scheme = "https" if settings.minio_use_ssl else "http"
+    upload_url = f"{scheme}://{endpoint}/{settings.minio_bucket}"
+    
+    return {
+        "upload_url": upload_url,
+        "form_data": form_data,
+        "object_key": object_key
+    }
 
 
 def generate_presigned_download_url(object_key: str, expires_hours: int = 24, filename: str | None = None) -> str:
@@ -70,6 +98,16 @@ def generate_presigned_download_url(object_key: str, expires_hours: int = 24, fi
 
     url = client.presigned_get_object(**kwargs)
     return url
+
+
+def delete_object(object_key: str) -> None:
+    """Permanently remove an object from the MinIO bucket."""
+    client = get_minio_client()
+    try:
+        client.remove_object(settings.minio_bucket, object_key)
+    except S3Error:
+        # If it doesn't exist, we don't care during a delete operation
+        pass
 
 
 def build_ticket_image_key(shop_id: str, ticket_id: str, filename: str) -> str:

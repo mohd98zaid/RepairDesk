@@ -26,6 +26,9 @@ import {
     CreditCard,
     CheckCircle,
     Plus,
+    QrCode,
+    MessageCircle,
+    Phone as PhoneIcon,
 } from "lucide-react";
 import { ticketsApi } from "@/lib/api/tickets";
 import { invoicesApi } from "@/lib/api/reports";
@@ -36,6 +39,7 @@ import { useAuthStore } from "@/store/authStore";
 import { fmtTicketId } from "@/lib/utils/ticketId";
 import type { TicketDetail } from "@/types";
 import { PreRepairChecklist, type ChecklistItem, defaultChecklist } from "@/components/tickets/PreRepairChecklist";
+import { buildStatusUpdateMessage, buildFeedbackMessage, openWhatsApp, openSMS } from "@/lib/messaging";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
     RECEIVED: ["IN_PROGRESS", "WAITING_PARTS", "CANCELLED"],
@@ -64,21 +68,21 @@ const QUICK_REPLIES = [
 ];
 
 // ── Star Rating component ─────────────────────────────────────
-function StarRating({ ticketId }: { ticketId: string }) {
-    const key = `rating_${ticketId}`;
-    const [rating, setRating] = useState<number>(() => {
-        try { return parseInt(localStorage.getItem(key) || '0', 10); } catch { return 0; }
-    });
+function StarRating({ ticket, onUpdate }: { ticket: TicketDetail; onUpdate: (t: TicketDetail) => void }) {
+    const existing = ticket.customer_rating ?? 0;
     const [hover, setHover] = useState(0);
-    const [saved, setSaved] = useState(!!rating);
+    const [saving, setSaving] = useState(false);
 
-    function saveRating(r: number) {
-        setRating(r);
-        setSaved(true);
-        try { localStorage.setItem(key, String(r)); } catch { /**/ }
+    async function saveRating(r: number) {
+        setSaving(true);
+        try {
+            await ticketsApi.submitRating(ticket.id, r, ticket.customer_feedback ?? undefined);
+            const updated = await ticketsApi.get(ticket.id);
+            onUpdate(updated);
+        } catch { /**/ } finally { setSaving(false); }
     }
 
-    const display = hover || rating;
+    const display = hover || existing;
     const labels = ['', 'Poor', 'Fair', 'Good', 'Great', 'Excellent'];
 
     return (
@@ -86,32 +90,35 @@ function StarRating({ ticketId }: { ticketId: string }) {
             <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
                 <Star className="w-4 h-4 text-warning" /> Customer Rating
             </h2>
-            {saved ? (
+            {existing > 0 ? (
                 <div className="text-center py-2">
                     <div className="flex justify-center gap-1 mb-2">
                         {[1, 2, 3, 4, 5].map(s => (
-                            <Star key={s} className={`w-6 h-6 ${s <= rating ? 'text-warning fill-warning' : 'text-muted-foreground opacity-50'}`} />
+                            <Star key={s} className={`w-6 h-6 ${s <= existing ? 'text-warning fill-warning' : 'text-muted-foreground opacity-50'}`} />
                         ))}
                     </div>
-                    <p className="text-warning text-sm font-semibold">{labels[rating]}</p>
-                    <button onClick={() => { setSaved(false); setRating(0); localStorage.removeItem(key); }}
-                        className="text-xs text-muted-foreground hover:text-foreground mt-2">Change rating</button>
+                    <p className="text-warning text-sm font-semibold">{labels[existing]}</p>
+                    {ticket.customer_feedback && (
+                        <p className="text-xs text-muted-foreground mt-1 italic">"{ticket.customer_feedback}"</p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-1">Submitted by customer</p>
                 </div>
             ) : (
                 <div className="text-center">
-                    <p className="text-xs text-muted-foreground mb-3">How satisfied was the customer?</p>
+                    <p className="text-xs text-muted-foreground mb-3">No rating yet. Set manually if needed:</p>
                     <div className="flex justify-center gap-2 mb-2">
                         {[1, 2, 3, 4, 5].map(s => (
                             <button key={s}
                                 onMouseEnter={() => setHover(s)}
                                 onMouseLeave={() => setHover(0)}
                                 onClick={() => saveRating(s)}
-                                className="transition-transform hover:scale-125">
-                                <Star className={`w-7 h-7 transition-colors ${s <= display ? 'text-warning fill-warning' : 'text-muted-foreground opacity-50'
-                                    }`} />
+                                disabled={saving}
+                                className="transition-transform hover:scale-125 disabled:opacity-50">
+                                <Star className={`w-7 h-7 transition-colors ${s <= display ? 'text-warning fill-warning' : 'text-muted-foreground opacity-50'}`} />
                             </button>
                         ))}
                     </div>
+                    {saving && <Loader2 className="w-4 h-4 animate-spin mx-auto text-primary" />}
                     {hover > 0 && <p className="text-xs text-warning font-medium">{labels[hover]}</p>}
                 </div>
             )}
@@ -119,86 +126,315 @@ function StarRating({ ticketId }: { ticketId: string }) {
     );
 }
 
-// ── Print Ticket Label ────────────────────────────────────────
-function PrintLabel({ ticket }: { ticket: { id: string; ticket_number: number; device_type: string; customer?: { name: string; phone: string } | null; status: string } }) {
+// ── Print Ticket Invoice / Label ──────────────────────────────
+function PrintLabel({ ticket, shopName }: {
+    ticket: TicketDetail;
+    shopName?: string;
+}) {
     function handlePrint() {
-        const win = window.open('', '_blank', 'width=400,height=300');
+        const win = window.open("", "_blank", "width=800,height=680");
         if (!win) return;
-        // Safe: use DOM APIs instead of document.write to prevent XSS
-        const doc = win.document;
-        doc.title = "Ticket Label";
-        const style = doc.createElement("style");
-        style.textContent = `
-            body { font-family: monospace; padding: 20px; font-size: 13px; }
-            .id { font-size: 22px; font-weight: bold; letter-spacing: 2px; margin-bottom: 8px; }
-            .row { margin: 4px 0; }
-            .qr { margin-top: 12px; border: 1px solid #ccc; padding: 8px; display: inline-block; font-size: 10px; color: #888; }
-            hr { border: none; border-top: 1px dashed #999; margin: 10px 0; }
-        `;
-        doc.head.appendChild(style);
-        const body = doc.body;
-        body.innerHTML = "";
 
-        const idDiv = doc.createElement("div");
-        idDiv.className = "id";
-        idDiv.textContent = `RD-${String(ticket.ticket_number).padStart(5, '0')}`;
-        body.appendChild(idDiv);
+        const ticketId   = `RD-${String(ticket.ticket_number).padStart(5, "0")}`;
+        const qrUrl      = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(ticket.id)}`;
+        const trackUrl   = `${window.location.origin}/feedback/${ticket.id}`;
+        const createdAt  = new Date(ticket.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+        const now        = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
-        body.appendChild(doc.createElement("hr"));
+        const partsCost  = parseFloat(ticket.parts_cost || "0");
+        const charges    = ticket.charges || [];
+        const chargesTotal = charges.reduce((s, c) => s + parseFloat(c.amount || "0"), 0);
+        const finalCost  = parseFloat(ticket.final_cost || "0") || (partsCost + chargesTotal);
 
-        const deviceRow = doc.createElement("div");
-        deviceRow.className = "row";
-        const deviceLabel = doc.createElement("b");
-        deviceLabel.textContent = "Device: ";
-        deviceRow.appendChild(deviceLabel);
-        deviceRow.appendChild(doc.createTextNode(ticket.device_type));
-        body.appendChild(deviceRow);
+        const STATUS_MAP: Record<string, string> = {
+            RECEIVED: "Received", IN_PROGRESS: "In Progress",
+            WAITING_PARTS: "Waiting for Parts", READY: "Ready for Pickup",
+            DELIVERED: "Delivered", CANCELLED: "Cancelled",
+        };
 
-        if (ticket.customer) {
-            const custRow = doc.createElement("div");
-            custRow.className = "row";
-            const custLabel = doc.createElement("b");
-            custLabel.textContent = "Customer: ";
-            custRow.appendChild(custLabel);
-            custRow.appendChild(doc.createTextNode(ticket.customer.name));
-            body.appendChild(custRow);
+        const sig = ticket.customer_signature;
 
-            const phoneRow = doc.createElement("div");
-            phoneRow.className = "row";
-            const phoneLabel = doc.createElement("b");
-            phoneLabel.textContent = "Phone: ";
-            phoneRow.appendChild(phoneLabel);
-            phoneRow.appendChild(doc.createTextNode(ticket.customer.phone));
-            body.appendChild(phoneRow);
-        }
+        const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Repair Invoice — ${ticketId}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    background: #fff;
+    color: #1a1a2e;
+    font-size: 13px;
+    padding: 32px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
 
-        const statusRow = doc.createElement("div");
-        statusRow.className = "row";
-        const statusLabel = doc.createElement("b");
-        statusLabel.textContent = "Status: ";
-        statusRow.appendChild(statusLabel);
-        statusRow.appendChild(doc.createTextNode(ticket.status.replace(/_/g, ' ')));
-        body.appendChild(statusRow);
+  /* ── Header ────────────────────────────────── */
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding-bottom: 20px;
+    border-bottom: 3px solid #4f46e5;
+    margin-bottom: 20px;
+  }
+  .brand-name {
+    font-size: 22px;
+    font-weight: 800;
+    color: #4f46e5;
+    letter-spacing: -0.5px;
+  }
+  .brand-sub {
+    font-size: 11px;
+    color: #6b7280;
+    margin-top: 2px;
+  }
+  .invoice-meta { text-align: right; }
+  .invoice-meta .invoice-id {
+    font-size: 18px;
+    font-weight: 800;
+    color: #1a1a2e;
+    letter-spacing: 1px;
+  }
+  .invoice-meta .invoice-date {
+    font-size: 11px;
+    color: #6b7280;
+    margin-top: 4px;
+  }
 
-        body.appendChild(doc.createElement("hr"));
+  /* ── Status pill ───────────────────────────── */
+  .status-pill {
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-top: 6px;
+    text-transform: uppercase;
+  }
+  .status-RECEIVED      { background:#dbeafe; color:#1d4ed8; }
+  .status-IN_PROGRESS   { background:#fef3c7; color:#b45309; }
+  .status-WAITING_PARTS { background:#ffedd5; color:#c2410c; }
+  .status-READY         { background:#dcfce7; color:#15803d; }
+  .status-DELIVERED     { background:#ede9fe; color:#6d28d9; }
+  .status-CANCELLED     { background:#fee2e2; color:#b91c1c; }
 
-        const qrDiv = doc.createElement("div");
-        qrDiv.className = "qr";
-        const qrImg = doc.createElement("img");
-        qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(ticket.id)}`;
-        qrImg.alt = "QR Code";
-        qrImg.width = 100;
-        qrDiv.appendChild(qrImg);
-        body.appendChild(qrDiv);
+  /* ── 2-col info block ──────────────────────── */
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .info-box {
+    background: #f8f9ff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .info-box-title {
+    font-size: 10px;
+    font-weight: 700;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 10px;
+  }
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 6px;
+    gap: 8px;
+  }
+  .info-label { color: #6b7280; font-size: 12px; white-space: nowrap; }
+  .info-value { color: #1a1a2e; font-size: 12px; font-weight: 600; text-align: right; max-width: 180px; word-break: break-word; }
 
-        win.print();
+  /* ── Charges table ─────────────────────────── */
+  .section-title {
+    font-size: 10px;
+    font-weight: 700;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 8px;
+  }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+  thead tr { background: #f3f4f6; }
+  th {
+    text-align: left;
+    padding: 7px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  th:last-child { text-align: right; }
+  td { padding: 8px 10px; font-size: 12px; color: #374151; border-bottom: 1px solid #f3f4f6; }
+  td:last-child { text-align: right; font-weight: 600; color: #1a1a2e; }
+  .total-row td { border-top: 2px solid #e5e7eb; border-bottom: none; font-weight: 700; font-size: 13px; color: #1a1a2e; }
+  .total-row td:last-child { color: #4f46e5; font-size: 15px; }
+
+  /* ── Footer row ────────────────────────────── */
+  .footer-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-top: 16px;
+    gap: 16px;
+  }
+  .qr-block { text-align: center; }
+  .qr-block img { border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px; }
+  .qr-caption { font-size: 9px; color: #9ca3af; margin-top: 4px; }
+
+  .sig-block {
+    flex: 1;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 12px 16px;
+    min-height: 80px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .sig-label { font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 4px; }
+  .sig-img { max-height: 64px; max-width: 200px; object-fit: contain; }
+
+  .terms-block {
+    flex: 1;
+    font-size: 10px;
+    color: #9ca3af;
+    line-height: 1.6;
+  }
+  .terms-block strong { color: #6b7280; display: block; margin-bottom: 4px; }
+
+  .track-block {
+    text-align: center;
+    border: 1px dashed #c4b5fd;
+    border-radius: 8px;
+    padding: 8px 14px;
+    background: #faf5ff;
+  }
+  .track-label { font-size: 10px; color: #7c3aed; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; }
+  .track-url   { font-size: 10px; color: #6d28d9; margin-top: 2px; word-break: break-all; }
+
+  @media print {
+    body { padding: 16px; }
+    @page { margin: 8mm; size: A4; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div class="header">
+  <div>
+    <div class="brand-name">${escHtml(shopName || "RepairDesk")}</div>
+    <div class="brand-sub">Professional Repair Management</div>
+    <div class="status-pill status-${ticket.status}">${escHtml(STATUS_MAP[ticket.status] || ticket.status)}</div>
+  </div>
+  <div class="invoice-meta">
+    <div class="invoice-id">${escHtml(ticketId)}</div>
+    <div class="invoice-date">Created: ${escHtml(createdAt)}</div>
+    <div class="invoice-date">Printed: ${escHtml(now)}</div>
+  </div>
+</div>
+
+<!-- ── Info grid ── -->
+<div class="info-grid">
+  <!-- Customer -->
+  <div class="info-box">
+    <div class="info-box-title">Customer</div>
+    ${ticket.customer ? `
+    <div class="info-row"><span class="info-label">Name</span><span class="info-value">${escHtml(ticket.customer.name)}</span></div>
+    <div class="info-row"><span class="info-label">Phone</span><span class="info-value">${escHtml(ticket.customer.phone)}</span></div>
+    ` : `<div class="info-value" style="color:#9ca3af">—</div>`}
+  </div>
+  <!-- Device -->
+  <div class="info-box">
+    <div class="info-box-title">Device</div>
+    <div class="info-row"><span class="info-label">Type</span><span class="info-value">${escHtml(ticket.device_type)}</span></div>
+    ${ticket.device_model ? `<div class="info-row"><span class="info-label">Model</span><span class="info-value">${escHtml(ticket.device_model)}</span></div>` : ""}
+    <div class="info-row"><span class="info-label">Issue</span><span class="info-value">${escHtml(ticket.reported_issue)}</span></div>
+    ${ticket.warranty_days ? `<div class="info-row"><span class="info-label">Warranty</span><span class="info-value">${ticket.warranty_days} days</span></div>` : ""}
+  </div>
+</div>
+
+<!-- ── Charges table ── -->
+<div class="section-title">Charges Breakdown</div>
+<table>
+  <thead>
+    <tr>
+      <th>Description</th>
+      <th style="text-align:right">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${partsCost > 0 ? `<tr><td>Parts &amp; Components</td><td>Rs. ${partsCost.toFixed(2)}</td></tr>` : ""}
+    ${charges.map(c => `<tr><td>${escHtml(c.name)}</td><td>Rs. ${parseFloat(c.amount).toFixed(2)}</td></tr>`).join("")}
+    ${partsCost === 0 && charges.length === 0 ? `<tr><td colspan="2" style="color:#9ca3af;text-align:center;padding:12px">No charges added yet</td></tr>` : ""}
+    <tr class="total-row">
+      <td>Total</td>
+      <td>Rs. ${finalCost.toFixed(2)}</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ── Footer row ── -->
+<div class="footer-row">
+
+  <!-- QR -->
+  <div class="qr-block">
+    <img src="${qrUrl}" alt="QR" width="90" height="90"/>
+    <div class="qr-caption">Scan to track</div>
+  </div>
+
+  <!-- Signature -->
+  <div class="sig-block">
+    <div class="sig-label">Customer Signature</div>
+    ${sig ? `<img class="sig-img" src="${sig}" alt="Signature"/>` : `<div style="font-size:10px;color:#d1d5db;font-style:italic;margin-top:8px">No signature captured</div>`}
+  </div>
+
+  <!-- Terms + Track link -->
+  <div style="display:flex;flex-direction:column;gap:10px;flex:1">
+    <div class="track-block">
+      <div class="track-label">Track Your Repair</div>
+      <div class="track-url">${escHtml(trackUrl)}</div>
+    </div>
+    <div class="terms-block">
+      <strong>Terms &amp; Conditions</strong>
+      All repaired devices carry a warranty only as specified above.
+      Uncollected devices after 30 days may incur storage charges.
+      Payment is due at the time of collection.
+    </div>
+  </div>
+
+</div>
+
+<script>window.onload = () => { setTimeout(() => window.print(), 400); }</script>
+</body>
+</html>`;
+
+        win.document.open();
+        win.document.write(html);
+        win.document.close();
     }
+
     return (
         <button onClick={handlePrint}
             className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted hover:bg-muted/80 text-foreground text-sm transition border border-border shadow-sm">
-            <Printer className="w-4 h-4" /> Print Label
+            <Printer className="w-4 h-4" /> Print Invoice
         </button>
     );
+}
+
+/** Minimal HTML escaping to prevent XSS in the print window */
+function escHtml(s: string | null | undefined): string {
+    return (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -257,6 +493,10 @@ export default function TicketDetailPage() {
     const [costInput, setCostInput] = useState("");
     const [savingCost, setSavingCost] = useState(false);
 
+    const [editingEstCost, setEditingEstCost] = useState(false);
+    const [estCostInput, setEstCostInput] = useState("");
+    const [savingEstCost, setSavingEstCost] = useState(false);
+
     // Technician assignment state
     const [team, setTeam] = useState<{ id: string; full_name?: string; email: string }[]>([]);
     const [assigningTech, setAssigningTech] = useState(false);
@@ -303,9 +543,14 @@ export default function TicketDetailPage() {
         }
     };
 
+    // Notify via messaging state
+    const [notifyWhatsApp, setNotifyWhatsApp] = useState(false);
+    const [notifySMS, setNotifySMS] = useState(false);
+
     // Mark Ready Modal state
     const [showReadyModal, setShowReadyModal] = useState(false);
     const [readyFinalCost, setReadyFinalCost] = useState("");
+    const [readyEstCost, setReadyEstCost] = useState("");
     const [pendingStatusNotes, setPendingStatusNotes] = useState("");
 
     const handleStatusChange = async (newStatus: string) => {
@@ -315,8 +560,8 @@ export default function TicketDetailPage() {
             const pts = parseFloat(ticket.parts_cost) || 0;
             const chgs = ticket.charges?.reduce((acc, c) => acc + parseFloat(c.amount), 0) || 0;
             const total = pts + chgs;
-            // Only pre-fill if there's a real non-zero total — otherwise let the placeholder show
-            setReadyFinalCost(total > 0 ? total.toFixed(2) : "");
+            setReadyFinalCost(total > 0 ? total.toFixed(2) : (ticket.final_cost || ""));
+            setReadyEstCost(ticket.estimated_cost?.toString() || "");
             setPendingStatusNotes(statusNotes);
             setShowReadyModal(true);
             return;
@@ -328,6 +573,28 @@ export default function TicketDetailPage() {
             await ticketsApi.changeStatus(id, newStatus, statusNotes || undefined);
             const updated = await ticketsApi.get(id);
             setTicket(updated);
+
+            // Trigger messaging if opted in
+            const appUrl = typeof window !== "undefined" ? window.location.origin : "";
+            const msgData = {
+                ticketId: updated.id,
+                ticketNumber: updated.ticket_number,
+                deviceType: updated.device_type,
+                deviceModel: updated.device_model,
+                reportedIssue: updated.reported_issue,
+                estimatedCost: updated.estimated_cost,
+                finalCost: updated.final_cost,
+                status: newStatus,
+                customerName: updated.customer?.name,
+                customerPhone: updated.customer?.phone,
+            };
+            const isDelivered = newStatus === "DELIVERED";
+            const msg = isDelivered
+                ? buildFeedbackMessage(msgData, appUrl)
+                : buildStatusUpdateMessage(msgData, statusNotes || undefined);
+            if (notifyWhatsApp && updated.customer?.phone) openWhatsApp(updated.customer.phone, msg);
+            if (notifySMS && updated.customer?.phone) openSMS(updated.customer.phone, msg);
+
             setStatusNotes("");
         } catch (err: unknown) {
             const e = err as { response?: { data?: { detail?: string } } };
@@ -342,7 +609,10 @@ export default function TicketDetailPage() {
         setChangingStatus(true);
         setStatusError(null);
         try {
-            await ticketsApi.update(ticket.id, { final_cost: readyFinalCost });
+            await ticketsApi.update(ticket.id, { 
+                final_cost: readyFinalCost,
+                estimated_cost: readyEstCost || undefined
+            });
             await ticketsApi.changeStatus(ticket.id, "READY", pendingStatusNotes || undefined);
             const updated = await ticketsApi.get(ticket.id);
             setTicket(updated);
@@ -362,10 +632,6 @@ export default function TicketDetailPage() {
         setSavingCost(true);
         try {
             const updated = await ticketsApi.update(id, {
-                device_type: ticket.device_type,
-                reported_issue: ticket.reported_issue,
-                device_model: ticket.device_model || undefined,
-                estimated_cost: ticket.estimated_cost?.toString(),
                 final_cost: costInput || undefined,
             });
             setTicket(updated);
@@ -374,6 +640,22 @@ export default function TicketDetailPage() {
             alert("Failed to update final cost.");
         } finally {
             setSavingCost(false);
+        }
+    };
+
+    const handleSaveEstCost = async () => {
+        if (!ticket) return;
+        setSavingEstCost(true);
+        try {
+            const updated = await ticketsApi.update(id, {
+                estimated_cost: estCostInput || undefined,
+            });
+            setTicket(updated);
+            setEditingEstCost(false);
+        } catch {
+            alert("Failed to update estimated cost.");
+        } finally {
+            setSavingEstCost(false);
         }
     };
 
@@ -476,7 +758,7 @@ export default function TicketDetailPage() {
                 </div>
                 {/* Invoice + Print buttons */}
                 <div className="flex items-center gap-2">
-                    <PrintLabel ticket={ticket} />
+                    <PrintLabel ticket={ticket} shopName={(user as any)?.shop_name || "RepairDesk"} />
                     {invoice ? (
                         <>
                             <a href={invoice.download_url} target="_blank" rel="noopener noreferrer"
@@ -567,6 +849,71 @@ export default function TicketDetailPage() {
                                         {ticket.customer.phone}
                                     </a>
                                 } />
+                                {/* Quick Message Buttons */}
+                                <div className="pt-3 flex gap-2 flex-wrap">
+                                    <button
+                                        onClick={() => {
+                                            const appUrl = typeof window !== "undefined" ? window.location.origin : "";
+                                            const msg = buildStatusUpdateMessage({
+                                                ticketId: ticket.id,
+                                                ticketNumber: ticket.ticket_number,
+                                                deviceType: ticket.device_type,
+                                                deviceModel: ticket.device_model,
+                                                reportedIssue: ticket.reported_issue,
+                                                estimatedCost: ticket.estimated_cost,
+                                                finalCost: ticket.final_cost,
+                                                status: ticket.status,
+                                                customerName: ticket.customer?.name,
+                                            }, statusNotes || undefined);
+                                            openWhatsApp(ticket.customer!.phone, msg);
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-500 text-xs font-medium transition border border-emerald-600/30"
+                                        title="Send current status via WhatsApp"
+                                    >
+                                        <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            const msg = buildStatusUpdateMessage({
+                                                ticketId: ticket.id,
+                                                ticketNumber: ticket.ticket_number,
+                                                deviceType: ticket.device_type,
+                                                deviceModel: ticket.device_model,
+                                                reportedIssue: ticket.reported_issue,
+                                                estimatedCost: ticket.estimated_cost,
+                                                finalCost: ticket.final_cost,
+                                                status: ticket.status,
+                                                customerName: ticket.customer?.name,
+                                            }, statusNotes || undefined);
+                                            openSMS(ticket.customer!.phone, msg);
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 text-foreground/80 text-xs font-medium transition border border-border"
+                                        title="Send current status via SMS"
+                                    >
+                                        <PhoneIcon className="w-3.5 h-3.5" /> SMS
+                                    </button>
+                                    {ticket.status === "DELIVERED" && (
+                                        <button
+                                            onClick={() => {
+                                                const appUrl = typeof window !== "undefined" ? window.location.origin : "";
+                                                const msg = buildFeedbackMessage({
+                                                    ticketId: ticket.id,
+                                                    ticketNumber: ticket.ticket_number,
+                                                    deviceType: ticket.device_type,
+                                                    deviceModel: ticket.device_model,
+                                                    reportedIssue: ticket.reported_issue,
+                                                    status: ticket.status,
+                                                    customerName: ticket.customer?.name,
+                                                }, appUrl);
+                                                openWhatsApp(ticket.customer!.phone, msg);
+                                            }}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-warning/15 hover:bg-warning/25 text-warning text-xs font-medium transition border border-warning/30"
+                                            title="Request feedback rating via WhatsApp"
+                                        >
+                                            <Star className="w-3.5 h-3.5" /> Feedback
+                                        </button>
+                                    )}
+                                </div>
                             </>
                         )}
                     </div>
@@ -586,7 +933,40 @@ export default function TicketDetailPage() {
                                 </button>
                             )}
                         </div>
-                        <InfoRow label="Estimated Cost" value={ticket.estimated_cost ? `₹${ticket.estimated_cost}` : "—"} />
+                        <InfoRow label="Estimated Cost" value={
+                            editingEstCost ? (
+                                <div className="flex items-center gap-2">
+                                    <span className="text-muted-foreground">₹</span>
+                                    <input
+                                        type="number"
+                                        value={estCostInput}
+                                        onChange={e => setEstCostInput(e.target.value)}
+                                        className="w-20 bg-muted border border-border rounded px-2 py-1 text-sm text-foreground focus:outline-none focus:border-primary shadow-sm"
+                                        autoFocus
+                                        placeholder="0.00"
+                                    />
+                                    <button onClick={handleSaveEstCost} disabled={savingEstCost} className="p-1 hover:bg-success/20 text-success rounded transition disabled:opacity-50">
+                                        {savingEstCost ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                    </button>
+                                    <button onClick={() => setEditingEstCost(false)} disabled={savingEstCost} className="p-1 hover:bg-muted text-muted-foreground rounded transition disabled:opacity-50">
+                                        <XIcon className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2">
+                                    <span>{ticket.estimated_cost ? `₹${ticket.estimated_cost}` : "—"}</span>
+                                    {ticket.status !== "DELIVERED" && ticket.status !== "CANCELLED" && (
+                                        <button
+                                            onClick={() => { setEstCostInput(ticket.estimated_cost?.toString() || ""); setEditingEstCost(true); }}
+                                            className="text-muted-foreground hover:text-primary bg-muted hover:bg-muted/80 p-1 rounded transition-colors"
+                                            title="Set Estimated Cost"
+                                        >
+                                            <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
+                                </div>
+                            )
+                        } />
                         <InfoRow label="Parts Cost" value={ticket.parts_cost ? `₹${ticket.parts_cost}` : "—"} />
                         <InfoRow label="Final Cost" value={
                             editingCost ? (
@@ -759,6 +1139,26 @@ export default function TicketDetailPage() {
 
                 {/* Right column — status change + parts + timeline */}
                 <div className="space-y-4">
+                    {/* QR Code panel */}
+                    <div className="bg-card border border-border shadow-sm rounded-xl p-5 flex flex-col items-center">
+                        <h2 className="text-sm font-semibold text-foreground mb-4 w-full flex items-center gap-2">
+                            <QrCode className="w-4 h-4 text-primary" /> Ticket QR Code
+                        </h2>
+                        <div className="bg-white p-3 rounded-xl border border-border shadow-sm mb-3">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(typeof window !== "undefined" ? btoa("RD-" + ticket.id) : ticket.id)}`}
+                                alt="Ticket QR Code"
+                                width={140}
+                                height={140}
+                                className="block"
+                            />
+                        </div>
+                        <p className="text-xs text-muted-foreground text-center max-w-[200px]">
+                            Scan to quickly open this ticket on another device.
+                        </p>
+                    </div>
+
                     {/* Status change panel */}
                     {availableTransitions.length > 0 && (
                         <div className="bg-card border border-border shadow-sm rounded-xl p-5">
@@ -785,6 +1185,31 @@ export default function TicketDetailPage() {
                                 rows={3}
                                 className="w-full px-3 py-2 rounded-lg bg-card border border-border shadow-sm text-foreground placeholder-muted-foreground text-sm focus:outline-none focus:border-primary resize-none mb-3"
                             />
+                            {/* Notify checkboxes */}
+                            {ticket.customer?.phone && (
+                                <div className="flex gap-4 mb-3 px-1">
+                                    <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={notifyWhatsApp}
+                                            onChange={e => setNotifyWhatsApp(e.target.checked)}
+                                            className="rounded border-border accent-emerald-500"
+                                        />
+                                        <MessageCircle className="w-3.5 h-3.5 text-emerald-500" />
+                                        Notify WhatsApp
+                                    </label>
+                                    <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={notifySMS}
+                                            onChange={e => setNotifySMS(e.target.checked)}
+                                            className="rounded border-border accent-primary"
+                                        />
+                                        <PhoneIcon className="w-3.5 h-3.5 text-primary" />
+                                        Notify SMS
+                                    </label>
+                                </div>
+                            )}
                             <div className="space-y-2">
                                 {availableTransitions.map((status) => (
                                     <button key={status} onClick={() => handleStatusChange(status)}
@@ -799,7 +1224,7 @@ export default function TicketDetailPage() {
                     )}
 
                     {/* Customer Rating — shown for delivered tickets */}
-                    {ticket.status === "DELIVERED" && <StarRating ticketId={ticket.id} />}
+                    {ticket.status === "DELIVERED" && <StarRating ticket={ticket} onUpdate={setTicket} />}
 
                     {/* Parts Selector */}
                     {ticket.status !== "CANCELLED" && ticket.status !== "DELIVERED" && (
@@ -875,22 +1300,42 @@ export default function TicketDetailPage() {
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">
-                                    Final Cost (₹)
-                                </label>
-                                <p className="text-xs text-muted-foreground mb-2">
-                                    You can adjust the final cost before notifying the customer.
-                                </p>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₹</span>
-                                    <input
-                                        type="number"
-                                        value={readyFinalCost}
-                                        onChange={e => setReadyFinalCost(e.target.value)}
-                                        className="w-full pl-8 pr-4 py-2.5 bg-card border border-border rounded-xl text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition shadow-sm text-lg font-mono font-medium"
-                                        placeholder="0.00"
-                                    />
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-foreground mb-1">
+                                        Estimated Cost (₹)
+                                    </label>
+                                    <p className="text-xs text-muted-foreground mb-2">
+                                        Update the estimate if needed.
+                                    </p>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₹</span>
+                                        <input
+                                            type="number"
+                                            value={readyEstCost}
+                                            onChange={e => setReadyEstCost(e.target.value)}
+                                            className="w-full pl-8 pr-4 py-2.5 bg-card border border-border rounded-xl text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition shadow-sm text-lg font-mono font-medium"
+                                            placeholder="0.00"
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-foreground mb-1">
+                                        Final Cost (₹)
+                                    </label>
+                                    <p className="text-xs text-muted-foreground mb-2">
+                                        The final cost to charge.
+                                    </p>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₹</span>
+                                        <input
+                                            type="number"
+                                            value={readyFinalCost}
+                                            onChange={e => setReadyFinalCost(e.target.value)}
+                                            className="w-full pl-8 pr-4 py-2.5 bg-card border border-border rounded-xl text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition shadow-sm text-lg font-mono font-medium"
+                                            placeholder="0.00"
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>

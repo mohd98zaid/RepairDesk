@@ -1,8 +1,8 @@
 import uuid
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
-from app.core.dependencies import CurrentUser, DbSession
+from app.core.dependencies import CurrentUser, DbSession, OwnerUser
 from app.modules.tickets import service
 from app.modules.tickets.schemas import (
     ConfirmUploadRequest,
@@ -18,6 +18,9 @@ from app.modules.tickets.schemas import (
     TicketCreateResponse,
     TicketUpdateResponse,
     TicketDetailResponse,
+    PublicTicketInfo,
+    RatingSubmit,
+    RatingResponse,
 )
 
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
@@ -82,6 +85,21 @@ async def create_ticket(data: TicketCreate, current_user: CurrentUser, db: DbSes
         "status": ticket.status,
         "created_at": ticket.created_at,
     }
+
+
+@router.delete("/{ticket_id}", status_code=204)
+async def delete_ticket(
+    ticket_id: uuid.UUID,
+    current_user: OwnerUser,
+    db: DbSession,
+):
+    """Permanently delete a ticket (Owner only)."""
+    await service.delete_ticket(
+        shop_id=current_user["shop_id"],
+        ticket_id=ticket_id,
+        db=db,
+    )
+    return
 
 
 @router.get("/{ticket_id}", response_model=TicketDetailResponse)
@@ -249,3 +267,41 @@ async def delete_ticket(
     ticket = await service.get_ticket(current_user["shop_id"], ticket_id, db)
     ticket.is_deleted = True
     await db.flush()
+
+
+# ── Public (no-auth) feedback endpoints ─────────────────────────────────────
+
+@router.get("/{ticket_id}/public-info", response_model=PublicTicketInfo)
+async def get_ticket_public_info(ticket_id: uuid.UUID, db: DbSession):
+    """Return minimal info about a ticket for the public feedback page (no auth required)."""
+    from sqlalchemy import select
+    from app.modules.tickets.models import Ticket
+    result = await db.execute(
+        select(Ticket).where(Ticket.id == ticket_id, Ticket.is_deleted == False)
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return ticket
+
+
+@router.post("/{ticket_id}/rating", response_model=RatingResponse)
+async def submit_ticket_rating(ticket_id: uuid.UUID, data: RatingSubmit, db: DbSession):
+    """Allow a customer to submit a 1-5 star rating for a delivered ticket (no auth required)."""
+    from sqlalchemy import select
+    from app.modules.tickets.models import Ticket
+    if not (1 <= data.rating <= 5):
+        raise HTTPException(status_code=422, detail="Rating must be between 1 and 5")
+    result = await db.execute(
+        select(Ticket).where(Ticket.id == ticket_id, Ticket.is_deleted == False)
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if ticket.status != "DELIVERED":
+        raise HTTPException(status_code=400, detail="Feedback can only be submitted for delivered tickets")
+    ticket.customer_rating = data.rating
+    ticket.customer_feedback = data.feedback
+    await db.commit()
+    await db.refresh(ticket)
+    return RatingResponse(ok=True, customer_rating=ticket.customer_rating, customer_feedback=ticket.customer_feedback)

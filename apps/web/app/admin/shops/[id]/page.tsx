@@ -5,17 +5,18 @@ import AdminNav from '@/components/admin/AdminNav';
 import {
     getShop, getShopTickets, getShopCustomers, getShopTeam, getShopInventory, deleteShop,
     restrictShop, blockShop, deactivateShop, reactivateShop, updateShopNote, resetShopPassword,
-    type ShopDetail, type TeamMember
+    getShopSessions, killShopSession,
+    type ShopDetail, type TeamMember, type SessionEntry
 } from '@/lib/admin-api';
 import {
     ArrowLeft, Store, Ticket, Users, Package,
     Phone, Mail, Calendar, Trash2, X, Loader2,
-    ShieldOff, ShieldAlert, ShieldX, ShieldCheck, StickyNote, Save, KeyRound,
+    ShieldOff, ShieldAlert, ShieldX, ShieldCheck, StickyNote, Save, KeyRound, MonitorSmartphone, Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 
 
-type Tab = 'tickets' | 'customers' | 'team' | 'inventory';
+type Tab = 'tickets' | 'customers' | 'team' | 'inventory' | 'sessions';
 type ShopStatus = 'ACTIVE' | 'RESTRICTED' | 'BLOCKED' | 'INACTIVE';
 
 const STATUS_CONFIG: Record<ShopStatus, { label: string; color: string; bg: string; border: string }> = {
@@ -38,6 +39,9 @@ export default function AdminShopPage() {
     const [note, setNote] = useState('');
     const [noteSaving, setNoteSaving] = useState(false);
     const [showResetPwd, setShowResetPwd] = useState(false);
+    const [sessionsData, setSessionsData] = useState<{ total: number; sessions: SessionEntry[] } | null>(null);
+    const [killLoading, setKillLoading] = useState<string | null>(null);
+    const [sessionsError, setSessionsError] = useState<string | null>(null);
 
     useEffect(() => {
         const token = localStorage.getItem('adminToken');
@@ -56,6 +60,11 @@ export default function AdminShopPage() {
             const data = await getShop(id);
             setShop(data);
             setNote(data.admin_note || '');
+            // Pre-load session count so the badge is correct immediately
+            try {
+                const s = await getShopSessions(id);
+                setSessionsData(s);
+            } catch { /* silent — sessions will load when tab is clicked */ }
         } catch { router.push('/admin/login'); }
     }
 
@@ -86,15 +95,35 @@ export default function AdminShopPage() {
     async function loadTab() {
         if (!id) return;
         setTabLoading(true);
+        setSessionsError(null);
         try {
             let data;
             if (tab === 'tickets') data = await getShopTickets(id, { page });
             else if (tab === 'customers') data = await getShopCustomers(id, { page });
             else if (tab === 'team') data = await getShopTeam(id);
+            else if (tab === 'sessions') {
+                const s = await getShopSessions(id);
+                setSessionsData(s);
+                return;
+            }
             else data = await getShopInventory(id, { page });
             setTabData(data);
-        } catch { }
+        } catch (err: any) {
+            if (tab === 'sessions') {
+                setSessionsError(err?.response?.data?.detail || 'Failed to load sessions. Check your connection.');
+            }
+        }
         finally { setTabLoading(false); }
+    }
+
+    async function handleKillSession(sessionKey: string) {
+        if (!confirm('Force-logout this session? The user will be signed out immediately.')) return;
+        setKillLoading(sessionKey);
+        try {
+            await killShopSession(id, sessionKey);
+            const s = await getShopSessions(id);
+            setSessionsData(s);
+        } catch { } finally { setKillLoading(null); }
     }
 
     function switchTab(t: Tab) { setTab(t); setPage(1); }
@@ -106,6 +135,7 @@ export default function AdminShopPage() {
         { key: 'customers', label: 'Customers', icon: Users, count: shop.stats.customers },
         { key: 'team', label: 'Team', icon: Users, count: shop.stats.members },
         { key: 'inventory', label: 'Inventory', icon: Package, count: shop.stats.inventory_items },
+        { key: 'sessions', label: 'Sessions', icon: MonitorSmartphone, count: sessionsData?.total ?? 0 },
     ];
 
     return (
@@ -135,20 +165,22 @@ export default function AdminShopPage() {
                             </span>
                         );
                     })()}
-                    <button
-                        onClick={() => setShowResetPwd(true)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)', color: '#a78bfa', borderRadius: 10, padding: '9px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600, transition: 'all 0.2s', marginLeft: 'auto' }}
-                        title="Reset owner password"
-                    >
-                        <KeyRound size={15} /> Reset Password
-                    </button>
-                    <button
-                        onClick={() => setShowDelete(true)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', borderRadius: 10, padding: '9px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600, transition: 'all 0.2s', marginLeft: 8 }}
-                        title="Delete this shop"
-                    >
-                        <Trash2 size={15} /> Delete Shop
-                    </button>
+                    <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', flexWrap: 'wrap' }}>
+                        <button
+                            onClick={() => setShowResetPwd(true)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)', color: '#a78bfa', borderRadius: 10, padding: '9px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600, transition: 'all 0.2s' }}
+                            title="Reset owner password"
+                        >
+                            <KeyRound size={15} /> Reset Password
+                        </button>
+                        <button
+                            onClick={() => setShowDelete(true)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', borderRadius: 10, padding: '9px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600, transition: 'all 0.2s' }}
+                            title="Delete this shop"
+                        >
+                            <Trash2 size={15} /> Delete Shop
+                        </button>
+                    </div>
                 </div>
 
                 {/* Info row */}
@@ -230,6 +262,14 @@ export default function AdminShopPage() {
                         <div className="tab-loading">Loading {tab}…</div>
                     ) : tab === 'team' ? (
                         <TeamTable members={tabData?.members ?? []} />
+                    ) : tab === 'sessions' ? (
+                        <SessionsTable
+                            sessions={sessionsData?.sessions ?? []}
+                            killLoading={killLoading}
+                            onKill={handleKillSession}
+                            error={sessionsError}
+                            onRefresh={() => loadTab()}
+                        />
                     ) : (
                         <DataTable tab={tab} data={tabData} page={page} setPage={setPage} />
                     )}
@@ -261,38 +301,173 @@ export default function AdminShopPage() {
 function TeamTable({ members }: { members: TeamMember[] }) {
     if (!members.length) return <p style={{ color: '#475569', textAlign: 'center', padding: '40px 0' }}>No members.</p>;
     return (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                    {['Name', 'Email', 'Role', 'Status', 'Joined'].map(h => (
-                        <th key={h} style={{ textAlign: 'left', padding: '8px 12px', fontSize: 12, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
-                    ))}
-                </tr>
-            </thead>
-            <tbody>
-                {members.map(m => (
-                    <tr key={m.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                        <td style={tdStyle}><strong style={{ color: '#e2e8f0' }}>{m.full_name}</strong></td>
-                        <td style={tdStyle}>{m.email}</td>
-                        <td style={tdStyle}>
-                            <span style={{ background: m.role === 'OWNER' ? 'rgba(167,139,250,0.15)' : 'rgba(99,102,241,0.1)', color: m.role === 'OWNER' ? '#a78bfa' : '#818cf8', padding: '2px 10px', borderRadius: 99, fontSize: 12, fontWeight: 600 }}>
-                                {m.role}
-                            </span>
-                        </td>
-                        <td style={tdStyle}>
-                            <span style={{ color: m.is_active ? '#4ade80' : '#f87171', fontSize: 12 }}>
-                                {m.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                        </td>
-                        <td style={tdStyle}>{new Date(m.created_at).toLocaleDateString()}</td>
+        <div className="admin-table-wrap">
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
+                <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        {['Name', 'Email', 'Role', 'Status', 'Joined'].map(h => (
+                            <th key={h} style={{ textAlign: 'left', padding: '8px 12px', fontSize: 12, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
                     </tr>
-                ))}
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    {members.map(m => (
+                        <tr key={m.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                            <td style={tdStyle}><strong style={{ color: '#e2e8f0' }}>{m.full_name}</strong></td>
+                            <td style={tdStyle}>{m.email}</td>
+                            <td style={tdStyle}>
+                                <span style={{ background: m.role === 'OWNER' ? 'rgba(167,139,250,0.15)' : 'rgba(99,102,241,0.1)', color: m.role === 'OWNER' ? '#a78bfa' : '#818cf8', padding: '2px 10px', borderRadius: 99, fontSize: 12, fontWeight: 600 }}>
+                                    {m.role}
+                                </span>
+                            </td>
+                            <td style={tdStyle}>
+                                <span style={{ color: m.is_active ? '#4ade80' : '#f87171', fontSize: 12 }}>
+                                    {m.is_active ? 'Active' : 'Inactive'}
+                                </span>
+                            </td>
+                            <td style={tdStyle}>{new Date(m.created_at).toLocaleDateString()}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
     );
 }
 
 const tdStyle: React.CSSProperties = { padding: '12px', fontSize: 14, color: '#94a3b8', verticalAlign: 'middle' };
+
+function SessionsTable({ sessions, killLoading, onKill, error, onRefresh }: {
+    sessions: SessionEntry[];
+    killLoading: string | null;
+    onKill: (sessionKey: string) => void;
+    error?: string | null;
+    onRefresh?: () => void;
+}) {
+    if (error) return (
+        <div style={{ textAlign: 'center', padding: '48px 0' }}>
+            <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                <MonitorSmartphone size={22} style={{ color: '#f87171' }} />
+            </div>
+            <p style={{ color: '#f87171', fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Failed to load sessions</p>
+            <p style={{ color: '#64748b', fontSize: 12, marginBottom: 16 }}>{error}</p>
+            {onRefresh && (
+                <button onClick={onRefresh} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#e2e8f0', borderRadius: 8, padding: '8px 20px', cursor: 'pointer', fontSize: 13 }}>
+                    ↺ Retry
+                </button>
+            )}
+        </div>
+    );
+
+    const MAX_TTL = 60 * 60 * 24 * 7;
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <p style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>
+                    {sessions.length === 0 ? 'No active sessions' : `${sessions.length} active session${sessions.length !== 1 ? 's' : ''}`}
+                </p>
+                {onRefresh && (
+                    <button onClick={onRefresh} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#64748b', borderRadius: 7, padding: '4px 12px', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <Loader2 size={11} style={{ opacity: 0.6 }} /> Refresh
+                    </button>
+                )}
+            </div>
+
+            {sessions.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.07)', borderRadius: 14 }}>
+                    <MonitorSmartphone size={32} style={{ color: '#334155', margin: '0 auto 10px' }} />
+                    <p style={{ color: '#475569', fontSize: 13 }}>No active sessions for this shop.</p>
+                    <p style={{ color: '#334155', fontSize: 11, marginTop: 4 }}>Users will appear here once they log in.</p>
+                </div>
+            ) : (
+                sessions.map((s) => {
+                    const pct = Math.max(0, Math.min(100, (s.ttl_seconds / MAX_TTL) * 100));
+                    const isKilling = killLoading === s.session_key;
+                    const roleColor = s.user_role === 'OWNER' ? '#a78bfa' : '#818cf8';
+                    const roleBg = s.user_role === 'OWNER' ? 'rgba(167,139,250,0.15)' : 'rgba(99,102,241,0.1)';
+                    return (
+                        <div key={s.session_key} style={{
+                            background: 'rgba(255,255,255,0.03)',
+                            border: '1px solid rgba(255,255,255,0.07)',
+                            borderRadius: 14,
+                            padding: '16px 20px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 16,
+                            transition: 'border-color 0.2s',
+                        }}>
+                            {/* Avatar */}
+                            <div style={{
+                                width: 40, height: 40, borderRadius: '50%',
+                                background: roleBg, border: `1px solid ${roleColor}40`,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                flexShrink: 0, fontSize: 16, fontWeight: 700, color: roleColor,
+                            }}>
+                                {s.user_name.charAt(0).toUpperCase()}
+                            </div>
+
+                            {/* User info */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                                    <strong style={{ color: '#e2e8f0', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {s.user_name}
+                                    </strong>
+                                    <span style={{ background: roleBg, color: roleColor, fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, whiteSpace: 'nowrap' }}>
+                                        {s.user_role}
+                                    </span>
+                                </div>
+                                <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>{s.user_email}</p>
+                            </div>
+
+                            {/* Session info + TTL bar */}
+                            <div style={{ minWidth: 140, flexShrink: 0 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                                    <span style={{ fontSize: 11, color: '#64748b' }}>Started {s.created_ago}</span>
+                                    <span style={{ fontSize: 11, color: pct > 30 ? '#4ade80' : '#fb923c' }}>
+                                        {Math.round(pct)}% left
+                                    </span>
+                                </div>
+                                <div style={{ height: 4, background: 'rgba(255,255,255,0.07)', borderRadius: 99, overflow: 'hidden' }}>
+                                    <div style={{
+                                        height: '100%',
+                                        width: `${pct}%`,
+                                        borderRadius: 99,
+                                        background: pct > 50 ? '#4ade80' : pct > 20 ? '#fb923c' : '#f87171',
+                                        transition: 'width 0.4s',
+                                    }} />
+                                </div>
+                                <p style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>
+                                    Session: <code style={{ letterSpacing: '0.03em' }}>{s.session_id.split('-')[0]}…</code>
+                                </p>
+                            </div>
+
+                            {/* Kill button */}
+                            <button
+                                onClick={() => onKill(s.session_key)}
+                                disabled={isKilling}
+                                title="Force-logout this session"
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 6,
+                                    background: isKilling ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.1)',
+                                    border: '1px solid rgba(239,68,68,0.3)',
+                                    color: '#f87171', borderRadius: 9, padding: '8px 14px',
+                                    cursor: isKilling ? 'wait' : 'pointer',
+                                    fontSize: 12, fontWeight: 600, flexShrink: 0, transition: 'all 0.2s',
+                                }}
+                            >
+                                {isKilling
+                                    ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Killing…</>
+                                    : <><Zap size={13} /> Kill</>}
+                            </button>
+                        </div>
+                    );
+                })
+            )}
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+    );
+}
 
 function Btn({ color, bg, border, onClick, loading, disabled, children }: {
     color: string; bg: string; border: string; onClick: () => void;
@@ -333,11 +508,13 @@ function DataTable({ tab, data, page, setPage }: { tab: Tab; data: any; page: nu
         customers: ['Name', 'Phone', 'Email', 'Joined'],
         team: [],
         inventory: ['Name', 'SKU', 'Qty', 'Price', 'Low Stock'],
+        sessions: [],
     };
 
     return (
         <>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div className="admin-table-wrap">
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
                 <thead>
                     <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                         {columns[tab].map(h => (
@@ -351,10 +528,10 @@ function DataTable({ tab, data, page, setPage }: { tab: Tab; data: any; page: nu
                             {tab === 'tickets' && <>
                                 <td style={tdStyle}>#{row.ticket_number}</td>
                                 <td style={tdStyle}><strong style={{ color: '#e2e8f0' }}>{row.device_type}</strong>{row.device_model ? <small style={{ color: '#475569' }}> · {row.device_model}</small> : null}</td>
-                                <td style={{ ...tdStyle, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.reported_issue}</td>
+                                <td style={{ ...tdStyle, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.reported_issue}</td>
                                 <td style={tdStyle}><StatusBadge status={row.status} /></td>
-                                <td style={tdStyle}>{row.final_cost ? `₹${Number(row.final_cost).toLocaleString('en-IN')}` : row.estimated_cost ? `~₹${Number(row.estimated_cost).toLocaleString('en-IN')}` : '–'}</td>
-                                <td style={tdStyle}>{new Date(row.created_at).toLocaleDateString()}</td>
+                                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{row.final_cost ? `Rs.${Number(row.final_cost).toLocaleString('en-IN')}` : row.estimated_cost ? `~Rs.${Number(row.estimated_cost).toLocaleString('en-IN')}` : '–'}</td>
+                                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{new Date(row.created_at).toLocaleDateString()}</td>
                                 <td style={tdStyle}>
                                     <Link href={`/admin/shops/${id}/tickets/${row.id}`} style={{ color: '#a78bfa', textDecoration: 'none', fontSize: 13, fontWeight: 500 }}>
                                         View
@@ -363,21 +540,22 @@ function DataTable({ tab, data, page, setPage }: { tab: Tab; data: any; page: nu
                             </>}
                             {tab === 'customers' && <>
                                 <td style={tdStyle}><strong style={{ color: '#e2e8f0' }}>{row.name}</strong></td>
-                                <td style={tdStyle}>{row.phone}</td>
+                                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{row.phone}</td>
                                 <td style={tdStyle}>{row.email || '–'}</td>
-                                <td style={tdStyle}>{new Date(row.created_at).toLocaleDateString()}</td>
+                                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{new Date(row.created_at).toLocaleDateString()}</td>
                             </>}
                             {tab === 'inventory' && <>
                                 <td style={tdStyle}><strong style={{ color: '#e2e8f0' }}>{row.name}</strong></td>
                                 <td style={tdStyle}><code style={{ fontSize: 12 }}>{row.sku || '–'}</code></td>
                                 <td style={tdStyle}>{row.quantity}</td>
-                                <td style={tdStyle}>₹{Number(row.selling_price).toLocaleString('en-IN')}</td>
+                                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>Rs.{Number(row.selling_price).toLocaleString('en-IN')}</td>
                                 <td style={tdStyle}><span style={{ color: row.is_low_stock ? '#fb923c' : '#4ade80', fontSize: 12 }}>{row.is_low_stock ? '⚠ Low' : '✓ OK'}</span></td>
                             </>}
                         </tr>
                     ))}
                 </tbody>
             </table>
+            </div>
             {totalPages > 1 && (
                 <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 20 }}>
                     <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#e2e8f0', borderRadius: 8, padding: '6px 16px', cursor: 'pointer', fontSize: 13 }}>← Prev</button>

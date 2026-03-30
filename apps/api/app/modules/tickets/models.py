@@ -49,6 +49,8 @@ class Ticket(Base):
     warranty_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pre_repair_checklist: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     customer_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
+    customer_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    customer_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False

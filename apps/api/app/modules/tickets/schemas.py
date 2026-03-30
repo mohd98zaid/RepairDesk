@@ -66,6 +66,7 @@ class PresignRequest(BaseModel):
 class PresignResponse(BaseModel):
     upload_url: str
     object_key: str
+    form_data: dict
 
 
 class TicketPartCreate(BaseModel):
@@ -141,6 +142,8 @@ class TicketDetailResponse(TicketSummaryResponse):
     images: list[TicketImageResponse] = []
     parts: list[TicketPartResponse] = []
     status_logs: list[StatusLogResponse] = []
+    customer_rating: int | None = None
+    customer_feedback: str | None = None
 
 
 class TicketListResponse(BaseModel):
@@ -179,3 +182,26 @@ class TicketUpdateResponse(BaseModel):
     final_cost: str | None = None
     profit: str | None = None
     model_config = {"from_attributes": True}
+
+
+class PublicTicketInfo(BaseModel):
+    """Minimal ticket info returned on the public feedback page."""
+    id: UUID
+    ticket_number: int
+    device_type: str
+    device_model: str | None = None
+    status: str
+    customer_rating: int | None = None
+    customer_feedback: str | None = None
+    model_config = {"from_attributes": True}
+
+
+class RatingSubmit(BaseModel):
+    rating: int  # 1–5
+    feedback: str | None = None
+
+
+class RatingResponse(BaseModel):
+    ok: bool
+    customer_rating: int
+    customer_feedback: str | None = None

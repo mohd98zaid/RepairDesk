@@ -6,13 +6,14 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Loader2, Phone, Smartphone, Wrench, Plus, Trash2, Receipt, PenTool } from "lucide-react";
+import { ArrowLeft, Loader2, Phone, Smartphone, Wrench, Plus, Trash2, Receipt, PenTool, MessageCircle, CheckCircle } from "lucide-react";
 import { ticketsApi } from "@/lib/api/tickets";
 import { getErrorMessage } from "@/lib/api/client";
 import { PreRepairChecklist, defaultChecklist, type ChecklistItem } from "@/components/tickets/PreRepairChecklist";
 import { SignaturePad } from "@/components/tickets/SignaturePad";
 import { api } from "@/lib/api/client";
 import { useEffect } from "react";
+import { buildNewTicketMessage, openWhatsApp, openSMS } from "@/lib/messaging";
 
 const schema = z.object({
     customer_phone: z.string().min(5, "Enter customer phone number"),
@@ -43,11 +44,23 @@ const DEVICE_TYPES = [
     "Other",
 ];
 
+interface CreatedTicket {
+    id: string;
+    ticket_number: number;
+    customer_phone?: string;
+    customer_name?: string;
+    device_type?: string;
+    device_model?: string;
+    reported_issue?: string;
+    estimated_cost?: string;
+}
+
 export default function NewTicketPage() {
     const router = useRouter();
     const [serverError, setServerError] = useState<string | null>(null);
     const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>(defaultChecklist);
     const [signature, setSignature] = useState<string | null>(null);
+    const [createdTicket, setCreatedTicket] = useState<CreatedTicket | null>(null);
 
     const {
         register,
@@ -98,14 +111,117 @@ export default function NewTicketPage() {
                 customer_signature: signature,
                 warranty_days: data.warranty_days ? parseInt(data.warranty_days, 10) : undefined,
             });
-            router.push(`/tickets/${ticket.id}`);
+            // Show notify modal instead of immediately redirecting
+            setCreatedTicket({
+                id: ticket.id,
+                ticket_number: ticket.ticket_number,
+                customer_phone: data.customer_phone,
+                customer_name: data.customer_name,
+                device_type: data.device_type,
+                device_model: data.device_model,
+                reported_issue: data.reported_issue,
+                estimated_cost: data.estimated_cost,
+            });
         } catch (err: unknown) {
             setServerError(getErrorMessage(err, "Failed to create ticket."));
         }
     };
 
+    const appUrl = typeof window !== "undefined" ? window.location.origin : "";
+
+    const handleSendWhatsApp = () => {
+        if (!createdTicket?.customer_phone) return;
+        const msg = buildNewTicketMessage(
+            {
+                ticketId: createdTicket.id,
+                ticketNumber: createdTicket.ticket_number,
+                deviceType: createdTicket.device_type || "",
+                deviceModel: createdTicket.device_model,
+                reportedIssue: createdTicket.reported_issue || "",
+                estimatedCost: createdTicket.estimated_cost,
+                status: "RECEIVED",
+                customerName: createdTicket.customer_name,
+            },
+            appUrl
+        );
+        openWhatsApp(createdTicket.customer_phone, msg);
+        router.push(`/tickets/${createdTicket.id}`);
+    };
+
+    const handleSendSMS = () => {
+        if (!createdTicket?.customer_phone) return;
+        const msg = buildNewTicketMessage(
+            {
+                ticketId: createdTicket.id,
+                ticketNumber: createdTicket.ticket_number,
+                deviceType: createdTicket.device_type || "",
+                deviceModel: createdTicket.device_model,
+                reportedIssue: createdTicket.reported_issue || "",
+                estimatedCost: createdTicket.estimated_cost,
+                status: "RECEIVED",
+                customerName: createdTicket.customer_name,
+            },
+            appUrl
+        );
+        openSMS(createdTicket.customer_phone, msg);
+        router.push(`/tickets/${createdTicket.id}`);
+    };
+
+    const handleSkip = () => {
+        if (!createdTicket) return;
+        router.push(`/tickets/${createdTicket.id}`);
+    };
+
+
     return (
         <div className="p-6 max-w-2xl mx-auto">
+            {/* Ticket Created Notify Modal */}
+            {createdTicket && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+                    <div className="bg-card border border-border shadow-2xl rounded-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="px-6 pt-6 pb-4 text-center">
+                            <div className="w-14 h-14 rounded-full bg-emerald-500/15 flex items-center justify-center mx-auto mb-4">
+                                <CheckCircle className="w-7 h-7 text-emerald-500" />
+                            </div>
+                            <h2 className="text-lg font-bold text-foreground">Ticket Created!</h2>
+                            <p className="text-muted-foreground text-sm mt-1">
+                                RD-{String(createdTicket.ticket_number).padStart(5, "0")} · {createdTicket.device_type}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-3">
+                                Notify the customer about their repair?
+                            </p>
+                        </div>
+                        <div className="px-6 pb-6 space-y-2">
+                            {createdTicket.customer_phone ? (
+                                <>
+                                    <button
+                                        onClick={handleSendWhatsApp}
+                                        className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm flex items-center justify-center gap-2 transition shadow-sm"
+                                    >
+                                        <MessageCircle className="w-4 h-4" />
+                                        Send via WhatsApp
+                                    </button>
+                                    <button
+                                        onClick={handleSendSMS}
+                                        className="w-full py-2.5 rounded-xl bg-muted border border-border hover:bg-muted/80 text-foreground font-semibold text-sm flex items-center justify-center gap-2 transition"
+                                    >
+                                        <Phone className="w-4 h-4" />
+                                        Send via SMS
+                                    </button>
+                                </>
+                            ) : (
+                                <p className="text-xs text-muted-foreground text-center italic">No phone number — notification not available.</p>
+                            )}
+                            <button
+                                onClick={handleSkip}
+                                className="w-full py-2 rounded-xl text-muted-foreground hover:text-foreground text-sm transition"
+                            >
+                                Skip — View Ticket
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* Header */}
             <div className="flex items-center gap-3 mb-6">
                 <Link href="/tickets" className="text-muted-foreground hover:text-foreground transition">

@@ -16,6 +16,8 @@ from app.modules.auth.schemas import (
     SendOtpRequest,
     VerifyOtpRequest,
     VerifyOtpResponse,
+    ForceLogoutOtpRequest,
+    ForceLogoutRequest,
 )
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -44,7 +46,9 @@ async def verify_otp(data: VerifyOtpRequest, db: DbSession):
 
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
+@limiter.limit("5/minute")
 async def register(
+    request: Request,
     data: RegisterRequest,
     response: Response,
     db: DbSession,
@@ -110,12 +114,13 @@ async def logout(
     current_user: CurrentUser,
 ):
     """Revoke refresh token and clear the cookie."""
-    await service.logout_user(current_user["user_id"])
+    await service.logout_user(current_user["user_id"], current_user.get("session_id"))
     response.delete_cookie(key=REFRESH_COOKIE_NAME)
 
 
 @router.post("/forgot-password", status_code=202)
-async def forgot_password(data: ForgotPasswordRequest, db: DbSession):
+@limiter.limit("3/minute")
+async def forgot_password(request: Request, data: ForgotPasswordRequest, db: DbSession):
     """Send a password reset email if the account exists."""
     await service.forgot_password(data.email, db)
     return {"message": "If that email exists, a reset link has been sent."}
@@ -126,3 +131,37 @@ async def reset_password(data: ResetPasswordRequest, db: DbSession):
     """Reset the password using a valid token."""
     await service.reset_password(data.token, data.new_password, db)
     return {"message": "Password successfully updated."}
+
+
+@router.post("/force-logout-otp", status_code=202)
+@limiter.limit("5/minute")
+async def force_logout_otp(request: Request, data: ForceLogoutOtpRequest, db: DbSession):
+    """Send a 6-digit OTP to allow the user to force-logout all other active sessions."""
+    await service.send_force_logout_otp(data.email, db)
+    return {"message": "If that email has an active account, an OTP has been sent."}
+
+
+@router.post("/force-logout-login", response_model=TokenResponse, status_code=200)
+@limiter.limit("5/minute")
+async def force_logout_login(
+    request: Request,
+    data: ForceLogoutRequest,
+    response: Response,
+    db: DbSession,
+):
+    """Verify OTP, evict all other sessions, and issue a fresh session."""
+    result = await service.force_logout_others_and_login(data.email, data.otp, data.password, db)
+
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=result["refresh_token"],
+        httponly=True,
+        secure=settings.is_production,
+        samesite="lax",
+        max_age=REFRESH_COOKIE_MAX_AGE,
+    )
+
+    return TokenResponse(
+        access_token=result["access_token"],
+        user=AuthUserPayload.model_validate(result["user"]),
+    )

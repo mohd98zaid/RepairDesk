@@ -226,10 +226,10 @@ export default function AdminTicketDetailPage() {
     };
 
     return (
-        <div className="admin-layout flex min-h-screen bg-[#0f1117] text-slate-200">
+        <div className="admin-layout">
             <AdminNav />
-            <main className="flex-1 p-8 overflow-y-auto">
-                <Link href={`/admin/shops/${shopId}`} className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-indigo-400 mb-6 transition">
+            <main className="admin-main">
+                <Link href={`/admin/shops/${shopId}`} className="back-link">
                     <ArrowLeft size={16} /> Back to Shop Details
                 </Link>
                 {content()}

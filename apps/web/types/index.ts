@@ -100,6 +100,8 @@ export interface TicketDetail extends TicketSummary {
   status_logs: { id: string; from_status: string | null; to_status: string; notes: string | null; changed_by: string; changed_at: string }[];
   pre_repair_checklist?: Record<string, any> | null;
   customer_signature?: string | null;
+  customer_rating?: number | null;
+  customer_feedback?: string | null;
 }
 
 export interface InventoryItem {

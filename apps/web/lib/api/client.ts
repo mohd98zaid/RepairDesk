@@ -38,10 +38,11 @@ function updateStoredToken(newToken: string) {
     } catch { /* ignore */ }
 }
 
-/** Clear auth from localStorage and redirect to login. */
-function clearAuthAndRedirect() {
+/** Clear auth from localStorage and redirect to login with an ejection reason. */
+function clearAuthAndRedirect(reason: 'session_ejected' | 'expired' = 'session_ejected') {
     if (typeof window === "undefined") return;
     localStorage.removeItem(AUTH_KEY);
+    sessionStorage.setItem('auth_redirect_reason', reason);
     window.location.href = "/login";
 }
 

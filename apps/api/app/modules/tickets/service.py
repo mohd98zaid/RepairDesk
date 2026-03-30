@@ -7,7 +7,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictException, NotFoundException, ValidationException
-from app.core.minio import build_ticket_image_key, generate_presigned_download_url, generate_presigned_upload_url
+from app.core.minio import (
+    build_ticket_image_key,
+    delete_object,
+    generate_presigned_download_url,
+    generate_presigned_post_policy,
+)
 from app.modules.customers.service import get_or_create_customer
 from app.modules.tickets.models import Ticket, TicketImage, TicketStatusLog
 from app.modules.tickets.schemas import (
@@ -308,6 +313,8 @@ async def add_ticket_part(
     ticket.parts_cost += cost_increase
     if ticket.final_cost is not None:
         ticket.profit = ticket.final_cost - ticket.parts_cost
+    if ticket.estimated_cost is not None:
+        ticket.estimated_cost += cost_increase
 
     await db.flush()
     return part
@@ -337,6 +344,8 @@ async def add_ticket_charge(
     if ticket.final_cost is not None:
         ticket.final_cost += charge_amount
         ticket.profit = ticket.final_cost - ticket.parts_cost
+    if ticket.estimated_cost is not None:
+        ticket.estimated_cost += charge_amount
 
     await db.flush()
     return charge
@@ -363,6 +372,8 @@ async def remove_ticket_charge(
     if ticket.final_cost is not None:
         ticket.final_cost -= charge.amount
         ticket.profit = ticket.final_cost - ticket.parts_cost
+    if ticket.estimated_cost is not None:
+        ticket.estimated_cost -= charge.amount
 
     await db.delete(charge)
     await db.flush()
@@ -400,6 +411,8 @@ async def remove_ticket_part(
     ticket.parts_cost -= cost_decrease
     if ticket.final_cost is not None:
         ticket.profit = ticket.final_cost - ticket.parts_cost
+    if ticket.estimated_cost is not None:
+        ticket.estimated_cost -= cost_decrease
 
     await db.delete(part)
     await db.flush()
@@ -410,11 +423,10 @@ async def presign_image_upload(
     ticket_id: uuid.UUID,
     data: PresignRequest,
     db: AsyncSession,
-) -> dict[str, str]:
+) -> dict[str, str | dict]:
     await get_ticket(shop_id, ticket_id, db)
     key = build_ticket_image_key(str(shop_id), str(ticket_id), data.filename)
-    url = generate_presigned_upload_url(key, data.content_type)
-    return {"upload_url": url, "object_key": key}
+    return generate_presigned_post_policy(key, data.content_type)
 
 
 async def confirm_image_upload(
@@ -522,3 +534,48 @@ async def get_ticket_detail(
         "parts_cost": str(ticket.parts_cost),
         "profit": str(ticket.profit) if ticket.profit else None,
     }
+async def delete_ticket(
+    shop_id: uuid.UUID,
+    ticket_id: uuid.UUID,
+    db: AsyncSession,
+) -> None:
+    """Permanently delete a ticket, restocking parts and clearing images."""
+    # 1. Fetch ticket with lock
+    result = await db.execute(
+        select(Ticket)
+        .where(Ticket.id == ticket_id, Ticket.shop_id == shop_id)
+        .with_for_update()
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise NotFoundException("Ticket not found.")
+
+    # 2. Restock inventory parts
+    from app.modules.inventory.models import InventoryItem, TicketPart
+
+    parts_result = await db.execute(
+        select(TicketPart).where(TicketPart.ticket_id == ticket_id)
+    )
+    parts = parts_result.scalars().all()
+
+    for part in parts:
+        inv_item_result = await db.execute(
+            select(InventoryItem)
+            .where(InventoryItem.id == part.inventory_item_id)
+            .with_for_update()
+        )
+        inv_item = inv_item_result.scalar_one_or_none()
+        if inv_item:
+            inv_item.quantity += part.quantity_used
+
+    # 3. Delete images from MinIO
+    images_result = await db.execute(
+        select(TicketImage).where(TicketImage.ticket_id == ticket_id)
+    )
+    images = images_result.scalars().all()
+    for img in images:
+        delete_object(img.minio_key)
+
+    # 4. Physical deletion from DB (Cascade handles related records)
+    await db.delete(ticket)
+    await db.flush()

@@ -14,10 +14,20 @@ export function QRScannerModal({ onClose }: { onClose: () => void }) {
         if (!result || scanned) return;
 
         try {
-            const raw = result[0]?.rawValue || result;
+            let raw = result[0]?.rawValue || result;
             if (!raw) return;
 
             setScanned(true);
+
+            // Try to decode base64 "RD-<uuid>" (obfuscated payload)
+            try {
+                const decoded = atob(raw);
+                if (decoded.startsWith("RD-")) {
+                    raw = decoded.substring(3);
+                }
+            } catch (e) {
+                // Not standard base64 or failed decode, process as raw text
+            }
 
             // Expecting either a direct UUID or a URL containing the UUID (e.g., /tickets/uuid)
             // Or just a ticket number.
