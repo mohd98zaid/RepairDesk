@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CloudOff, CloudSync, CheckCircle2 } from "lucide-react";
+import { CloudOff, CloudSync } from "lucide-react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { syncDB } from "@/lib/db";
 import { api } from "@/lib/api/client";
@@ -10,8 +10,16 @@ export function OfflineSyncManager() {
     const [isOnline, setIsOnline] = useState(true);
     const [isSyncing, setIsSyncing] = useState(false);
 
-    // Auto-update pending mutations count
-    const pendingCount = useLiveQuery(() => syncDB.mutations.where({ status: "PENDING" }).count(), []) || 0;
+    // Only count truly PENDING (not FAILED) mutations
+    const pendingCount = useLiveQuery(
+        () => syncDB.mutations.where({ status: "PENDING" }).count(),
+        []
+    ) ?? null; // null = Dexie not yet initialized
+
+    // On mount: purge stale FAILED records so they don't pollute the queue count
+    useEffect(() => {
+        syncDB.mutations.where({ status: "FAILED" }).delete().catch(() => {});
+    }, []);
 
     // Monitor network status
     useEffect(() => {
@@ -28,12 +36,13 @@ export function OfflineSyncManager() {
         };
     }, []);
 
-    // Trigger sync when coming back online
+    // Trigger sync when coming back online and there are pending mutations
     useEffect(() => {
-        if (isOnline && pendingCount > 0 && !isSyncing) {
+        if (isOnline && pendingCount && pendingCount > 0 && !isSyncing) {
             syncPendingMutations();
         }
-    }, [isOnline, pendingCount, isSyncing]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOnline, pendingCount]);
 
     const syncPendingMutations = async () => {
         setIsSyncing(true);
@@ -42,7 +51,6 @@ export function OfflineSyncManager() {
 
             for (const item of pending) {
                 try {
-                    // Send request. Use standard api client.
                     await api.request({
                         method: item.method,
                         url: item.url,
@@ -50,21 +58,18 @@ export function OfflineSyncManager() {
                         headers: item.headers,
                     });
 
-                    // On success, delete from queue
                     if (item.id) {
                         await syncDB.mutations.delete(item.id);
                     }
                 } catch (err: any) {
-                    // If it's another network error, stop syncing and wait
-                    if (err.isOfflineQueued || !navigator.onLine) {
-                        break;
-                    }
+                    // Network still down — stop and wait
+                    if (err.isOfflineQueued || !navigator.onLine) break;
 
-                    // If it's a hard validation error (400, 422), mark as failed so it doesn't block
+                    // Hard server error (4xx) — mark failed so it doesn't block the queue
                     if (err.response && item.id) {
                         await syncDB.mutations.update(item.id, {
                             status: "FAILED",
-                            error: err.response?.data?.detail || err.message
+                            error: err.response?.data?.detail || err.message,
                         });
                     }
                 }
@@ -74,24 +79,27 @@ export function OfflineSyncManager() {
         }
     };
 
-    if (pendingCount === 0 && isOnline) return null;
+    // Hide badge when: Dexie not ready yet, OR online with nothing pending and not syncing
+    if (pendingCount === null) return null;
+    if (isOnline && pendingCount === 0 && !isSyncing) return null;
 
     return (
-        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border shadow-sm transition-all duration-300 ${isOnline ? (isSyncing ? "bg-primary/20 text-primary border-primary/30" : "bg-success/20 text-success border-success/30") : "bg-warning/20 text-warning border-warning/30"}`}>
+        <div
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border shadow-sm transition-all duration-300 ${
+                !isOnline
+                    ? "bg-warning/20 text-warning border-warning/30"
+                    : "bg-primary/20 text-primary border-primary/30"
+            }`}
+        >
             {!isOnline ? (
                 <>
                     <CloudOff className="w-3.5 h-3.5" />
-                    <span>Offline ({pendingCount} pending)</span>
-                </>
-            ) : isSyncing ? (
-                <>
-                    <CloudSync className="w-3.5 h-3.5 animate-spin" />
-                    <span>Syncing {pendingCount}...</span>
+                    <span>Offline{pendingCount > 0 ? ` (${pendingCount} pending)` : ""}</span>
                 </>
             ) : (
                 <>
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Synced</span>
+                    <CloudSync className="w-3.5 h-3.5 animate-spin" />
+                    <span>Syncing {pendingCount}...</span>
                 </>
             )}
         </div>
