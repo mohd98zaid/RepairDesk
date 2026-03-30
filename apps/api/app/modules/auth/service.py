@@ -160,23 +160,37 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
     # Enforce device limits
     from app.modules.billing.service import has_feature
     device_limit_str = await has_feature(user.shop_id, "device_limit", db)
-    
+
     if device_limit_str in ("unlimited", "-1"):
         device_limit = -1
     else:
         # Default is 1 for free plan
         device_limit = int(device_limit_str) if device_limit_str and device_limit_str.isdigit() else 1
-    
+
+    # Collect all active session keys for this user
+    all_session_keys: list[bytes] = []
     cursor = b'0'
-    active_sessions = 0
     while cursor:
         cursor, keys = await redis.scan(cursor=cursor, match=f"refresh:{user.id}:*")
-        active_sessions += len(keys)
+        all_session_keys.extend(keys)
         if cursor == b'0':
             break
 
+    active_sessions = len(all_session_keys)
+
     if device_limit != -1 and active_sessions >= device_limit:
-        raise ForbiddenException(f"Device limit reached. Your plan allows a maximum of {device_limit} active session(s). Please log out of another device or upgrade your plan.")
+        if device_limit == 1:
+            # Single-device plan: auto-evict all previous sessions (last-wins semantics).
+            # This handles the case where the user registered and still has a live session,
+            # or simply closed their tab without logging out — always allow re-login.
+            if all_session_keys:
+                await redis.delete(*all_session_keys)
+        else:
+            # Multi-device plan: user must confirm force-logout via OTP before we can proceed.
+            raise ForbiddenException(
+                f"Device limit reached. Your plan allows a maximum of {device_limit} active session(s). "
+                "Please log out of another device or upgrade your plan."
+            )
 
     token_data = {
         "sub": str(user.id),
