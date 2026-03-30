@@ -38,18 +38,18 @@ limiter = Limiter(key_func=get_remote_address)
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
     # Auto-create all tables on startup only in development
-    if not settings.is_production:
-        from app.core.db import engine, Base
-        # Import all models so their metadata is registered before create_all
-        import app.modules.shops.models  # noqa
-        import app.modules.users.models  # noqa
-        import app.modules.customers.models  # noqa
-        import app.modules.tickets.models  # noqa
-        import app.modules.inventory.models  # noqa
-        import app.modules.invoices.models  # noqa
-        import app.modules.billing.models  # noqa
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all, checkfirst=True)
+    # WARNING: Disabled completely to prevent asyncpg race conditions with multiple uvicorn workers
+    # if not settings.is_production:
+    #     from app.core.db import engine, Base
+    #     import app.modules.shops.models  # noqa
+    #     import app.modules.users.models  # noqa
+    #     import app.modules.customers.models  # noqa
+    #     import app.modules.tickets.models  # noqa
+    #     import app.modules.inventory.models  # noqa
+    #     import app.modules.invoices.models  # noqa
+    #     import app.modules.billing.models  # noqa
+    #     # async with engine.begin() as conn:
+    #     #     await conn.run_sync(Base.metadata.create_all, checkfirst=True)
 
     # Validate secrets
     import logging
