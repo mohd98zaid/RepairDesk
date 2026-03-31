@@ -1,100 +1,399 @@
 name: CI
 
 on:
+  push:
+    branches: [main, develop]
   pull_request:
     branches: [main]
 
+env:
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.12'
+
 jobs:
-  test-api:
-    name: Backend Tests
+  # ─────────────────────────────────────────────
+  # Backend: Breaking Tests (CRITICAL)
+  # Catches missing DB columns, schema mismatches, crashes
+  # ─────────────────────────────────────────────
+  backend-breaking:
+    name: Backend — Breaking Tests
     runs-on: ubuntu-latest
+
     services:
       postgres:
         image: postgres:16-alpine
         env:
+          POSTGRES_USER: repairdesk_user
+          POSTGRES_PASSWORD: change_me_in_prod
           POSTGRES_DB: repairdesk_test
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_pass
         ports:
-          - "5432:5432"
+          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+
       redis:
         image: redis:7-alpine
         ports:
-          - "6379:6379"
+          - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://repairdesk_user:change_me_in_prod@localhost:5432/repairdesk_test
+      TEST_DATABASE_URL: postgresql+asyncpg://repairdesk_user:change_me_in_prod@localhost:5432/repairdesk_test
+      REDIS_URL: redis://localhost:6379
+      SECRET_KEY: ci-test-secret-key-for-breaking-tests-12345678901234567890
+      ENVIRONMENT: test
+      FRONTEND_URL: https://repairdeskz.vercel.app
+      CORS_ORIGINS: https://repairdeskz.vercel.app,http://localhost:3000
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('apps/api/requirements.txt') }}
 
       - name: Install dependencies
+        working-directory: apps/api
         run: |
-          cd apps/api
-          pip install -r requirements.txt -r requirements-dev.txt
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
 
-      - name: Run tests
-        env:
-          DATABASE_URL: postgresql+asyncpg://test_user:test_pass@localhost:5432/repairdesk_test
-          REDIS_URL: redis://localhost:6379/0
-          JWT_SECRET: ci-test-secret-key
-          JWT_ALGORITHM: HS256
-          ACCESS_TOKEN_EXPIRE_MINUTES: 15
-          REFRESH_TOKEN_EXPIRE_DAYS: 7
-          MINIO_ENDPOINT: localhost:9000
-          MINIO_ACCESS_KEY: test_access
-          MINIO_SECRET_KEY: test_secret
-          MINIO_BUCKET: repairdesk-test
-          MINIO_USE_SSL: "false"
-        run: |
-          cd apps/api
-          pytest tests/ -v --cov=app --cov-report=xml
+      - name: Run breaking tests
+        working-directory: apps/api
+        run: python -m pytest tests/breaking/ -v --tb=short
 
-      - uses: codecov/codecov-action@v4
-        with:
-          files: apps/api/coverage.xml
-
-  test-web:
-    name: Frontend Lint & Type Check
+  # ─────────────────────────────────────────────
+  # Backend: Security Tests
+  # JWT tampering, IDOR, SQL injection, XSS, rate limiting
+  # ─────────────────────────────────────────────
+  backend-security:
+    name: Backend — Security Tests
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: repairdesk_user
+          POSTGRES_PASSWORD: change_me_in_prod
+          POSTGRES_DB: repairdesk_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://repairdesk_user:change_me_in_prod@localhost:5432/repairdesk_test
+      TEST_DATABASE_URL: postgresql+asyncpg://repairdesk_user:change_me_in_prod@localhost:5432/repairdesk_test
+      REDIS_URL: redis://localhost:6379
+      SECRET_KEY: ci-test-secret-key-for-security-tests-12345678901234567890
+      ENVIRONMENT: test
+      FRONTEND_URL: https://repairdeskz.vercel.app
+      CORS_ORIGINS: https://repairdeskz.vercel.app,http://localhost:3000
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          node-version: "20"
-          cache: "npm"
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        working-directory: apps/api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Run security tests
+        working-directory: apps/api
+        run: python -m pytest tests/breaking/test_security.py tests/security/ -v --tb=short
+
+  # ─────────────────────────────────────────────
+  # Backend: Auth Lifecycle Tests
+  # Token expiry, refresh, logout, session management
+  # ─────────────────────────────────────────────
+  backend-auth:
+    name: Backend — Auth Lifecycle Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: repairdesk_user
+          POSTGRES_PASSWORD: change_me_in_prod
+          POSTGRES_DB: repairdesk_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://repairdesk_user:change_me_in_prod@localhost:5432/repairdesk_test
+      TEST_DATABASE_URL: postgresql+asyncpg://repairdesk_user:change_me_in_prod@localhost:5432/repairdesk_test
+      REDIS_URL: redis://localhost:6379
+      SECRET_KEY: ci-test-secret-key-for-auth-tests-12345678901234567890
+      ENVIRONMENT: test
+      FRONTEND_URL: https://repairdeskz.vercel.app
+      CORS_ORIGINS: https://repairdeskz.vercel.app,http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        working-directory: apps/api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Run auth lifecycle tests
+        working-directory: apps/api
+        run: python -m pytest tests/breaking/test_auth_lifecycle.py -v --tb=short
+
+  # ─────────────────────────────────────────────
+  # Backend: API Contract Tests
+  # Strict response structure validation
+  # ─────────────────────────────────────────────
+  backend-contracts:
+    name: Backend — API Contract Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: repairdesk_user
+          POSTGRES_PASSWORD: change_me_in_prod
+          POSTGRES_DB: repairdesk_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://repairdesk_user:change_me_in_prod@localhost:5432/repairdesk_test
+      TEST_DATABASE_URL: postgresql+asyncpg://repairdesk_user:change_me_in_prod@localhost:5432/repairdesk_test
+      REDIS_URL: redis://localhost:6379
+      SECRET_KEY: ci-test-secret-key-for-contract-tests-12345678901234567890
+      ENVIRONMENT: test
+      FRONTEND_URL: https://repairdeskz.vercel.app
+      CORS_ORIGINS: https://repairdeskz.vercel.app,http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        working-directory: apps/api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Run contract tests
+        working-directory: apps/api
+        run: python -m pytest tests/breaking/test_contracts.py -v --tb=short
+
+  # ─────────────────────────────────────────────
+  # Frontend: Unit & Integration Tests
+  # ─────────────────────────────────────────────
+  frontend-tests:
+    name: Frontend — Unit & Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
           cache-dependency-path: apps/web/package-lock.json
 
       - name: Install dependencies
-        run: cd apps/web && npm ci
+        working-directory: apps/web
+        run: npm ci
 
-      - name: Lint
-        run: cd apps/web && npm run lint
-
-      - name: Tests
-        run: cd apps/web && npm run test
+      - name: Run Vitest tests
+        working-directory: apps/web
+        run: npm run test
 
       - name: Type check
-        run: cd apps/web && npx tsc --noEmit
+        working-directory: apps/web
+        run: npx tsc --noEmit
 
-  build:
-    name: Docker Build Check
+      - name: Lint
+        working-directory: apps/web
+        run: npm run lint
+
+  # ─────────────────────────────────────────────
+  # Frontend: E2E Tests (Playwright)
+  # Real browser: CORS, cookies, protected routes
+  # ─────────────────────────────────────────────
+  frontend-e2e:
+    name: Frontend — E2E Tests (Playwright)
     runs-on: ubuntu-latest
-    needs: [test-api, test-web]
+    needs: [frontend-tests]
+
+    env:
+      NEXT_PUBLIC_API_URL: https://repairdesk-vr8w.onrender.com/api/v1
+      FRONTEND_URL: http://localhost:3000
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E tests
+        working-directory: apps/web
+        run: npx playwright test
+        env:
+          CI: true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 30
+
+      - name: Upload screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: apps/web/test-results/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────
+  # Production Environment Validation
+  # Fails build if env is misconfigured
+  # ─────────────────────────────────────────────
+  env-validation:
+    name: Production Environment Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        working-directory: apps/api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Validate production environment
+        working-directory: apps/api
+        run: python -m pytest tests/breaking/test_env_runtime.py -v --tb=short
+        env:
+          DATABASE_URL: postgresql+asyncpg://user:pass@db.example.com:5432/repairdesk
+          REDIS_URL: redis://redis.example.com:6379
+          SECRET_KEY: ci-test-secret-key-that-is-long-enough-for-validation-12345
+          FRONTEND_URL: https://repairdeskz.vercel.app
+          CORS_ORIGINS: https://repairdeskz.vercel.app,http://localhost:3000
+          ENVIRONMENT: production
+
+  # ─────────────────────────────────────────────
+  # Docker Build Check
+  # ─────────────────────────────────────────────
+  docker-build:
+    name: Docker Build Check
+    runs-on: ubuntu-latest
+    needs: [backend-breaking, backend-security, frontend-tests]
+
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Build API image
         run: docker build -f infra/docker/Dockerfile.api -t repairdesk-api:ci apps/api
+
       - name: Build Web image
         run: docker build -f infra/docker/Dockerfile.web -t repairdesk-web:ci apps/web
