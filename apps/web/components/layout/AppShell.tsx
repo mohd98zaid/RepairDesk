@@ -767,7 +767,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             {mobileMenuOpen && (
                 <div className="md:hidden fixed inset-0 z-40 pt-14">
                     <div className="absolute inset-0 bg-black/60" onClick={() => setMobileMenuOpen(false)} />
-                    <div className="absolute top-14 left-0 bottom-0 w-72 bg-card border-r border-border p-4 flex flex-col gap-1 overflow-y-auto">
+                    <div className="absolute top-14 right-0 bottom-0 w-72 bg-card border-l border-border p-4 flex flex-col gap-1 overflow-y-auto shadow-2xl">
                         <SidebarContent onNavClick={() => setMobileMenuOpen(false)} />
                     </div>
                 </div>
