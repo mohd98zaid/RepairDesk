@@ -445,7 +445,23 @@ def create_app() -> FastAPI:
                     await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_shop_id ON tickets(shop_id)"))
                     await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_customer_id ON tickets(customer_id)"))
                     await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_created_at ON tickets(created_at)"))
-                    results.append("tickets: created/exists")
+
+                    # Patch existing tickets table with missing columns
+                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT false"))
+                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)"))
+                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS parts_cost DECIMAL(10,2) NOT NULL DEFAULT 0"))
+                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS profit DECIMAL(10,2)"))
+                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS pre_repair_checklist JSONB"))
+                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_signature TEXT"))
+                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_rating INTEGER"))
+                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_feedback TEXT"))
+                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS technician_notes TEXT"))
+                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS device_model VARCHAR(150)"))
+                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reported_issue TEXT"))
+                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_number INTEGER"))
+                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_id UUID REFERENCES customers(id)"))
+
+                    results.append("tickets: created/exists + patched")
                 except Exception as e:
                     results.append(f"tickets: error ({type(e).__name__})")
 
