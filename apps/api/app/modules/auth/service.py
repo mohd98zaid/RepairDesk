@@ -138,34 +138,46 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
         raise UnauthorizedException("Invalid email or password.")
 
     # Check shop account status
-    shop_result = await db.execute(select(Shop).where(Shop.id == user.shop_id))
-    shop = shop_result.scalar_one_or_none()
-    if shop:
-        shop_status = getattr(shop, "shop_status", "ACTIVE")
-        if shop_status == "BLOCKED":
-            raise UnauthorizedException(
-                "Your shop account has been blocked. Please contact support."
-            )
-        if shop_status == "INACTIVE":
-            raise UnauthorizedException(
-                "Your shop account has been deactivated. Please contact support."
-            )
+    shop = None
+    try:
+        shop_result = await db.execute(select(Shop).where(Shop.id == user.shop_id))
+        shop = shop_result.scalar_one_or_none()
+        if shop:
+            shop_status = getattr(shop, "shop_status", "ACTIVE")
+            if shop_status == "BLOCKED":
+                raise UnauthorizedException(
+                    "Your shop account has been blocked. Please contact support."
+                )
+            if shop_status == "INACTIVE":
+                raise UnauthorizedException(
+                    "Your shop account has been deactivated. Please contact support."
+                )
+    except UnauthorizedException:
+        raise
+    except Exception:
+        pass  # If shop lookup fails, continue with login
 
-    # Update last_login_at
-    user.last_login_at = datetime.now(timezone.utc)
-    
+    # Update last_login_at (defensively — column may not exist on old DBs)
+    try:
+        user.last_login_at = datetime.now(timezone.utc)
+    except Exception:
+        pass
+
     redis = await get_redis()
     session_id = str(uuid.uuid4())
-    
-    # Enforce device limits
-    from app.modules.billing.service import has_feature
-    device_limit_str = await has_feature(user.shop_id, "device_limit", db)
 
-    if device_limit_str in ("unlimited", "-1"):
-        device_limit = -1
-    else:
-        # Default is 1 for free plan
-        device_limit = int(device_limit_str) if device_limit_str and device_limit_str.isdigit() else 1
+    # Enforce device limits (defensive — billing tables may not exist)
+    device_limit = 1
+    try:
+        from app.modules.billing.service import has_feature
+        device_limit_str = await has_feature(user.shop_id, "device_limit", db)
+
+        if device_limit_str in ("unlimited", "-1"):
+            device_limit = -1
+        else:
+            device_limit = int(device_limit_str) if device_limit_str and device_limit_str.isdigit() else 1
+    except Exception:
+        device_limit = 1
 
     # Collect all active session keys for this user
     all_session_keys: list[str] = []
@@ -180,13 +192,9 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
 
     if device_limit != -1 and active_sessions >= device_limit:
         if device_limit == 1:
-            # Single-device plan: auto-evict all previous sessions (last-wins semantics).
-            # This handles the case where the user registered and still has a live session,
-            # or simply closed their tab without logging out — always allow re-login.
             if all_session_keys:
                 await redis.delete(*all_session_keys)
         else:
-            # Multi-device plan: user must confirm force-logout via OTP before we can proceed.
             raise ForbiddenException(
                 f"Device limit reached. Your plan allows a maximum of {device_limit} active session(s). "
                 "Please log out of another device or upgrade your plan."
@@ -195,7 +203,7 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
     token_data = {
         "sub": str(user.id),
         "shop_id": str(user.shop_id),
-        "role": user.role,
+        "role": str(user.role) if hasattr(user.role, "value") else user.role,
         "shop_status": getattr(shop, "shop_status", "ACTIVE") if shop else "ACTIVE",
         "session_id": session_id,
     }

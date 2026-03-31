@@ -122,6 +122,17 @@ def create_app() -> FastAPI:
             content={"detail": exc.detail, "code": exc.code},
         )
 
+    @app.exception_handler(Exception)
+    async def generic_exception_handler(request: Request, exc: Exception):
+        """Catch-all handler to prevent raw 500s without CORS headers."""
+        import logging
+        logger = logging.getLogger("repairdesk.error")
+        logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"},
+        )
+
     # Register routers
     prefix = "/api/v1"
     app.include_router(auth_router, prefix=prefix)

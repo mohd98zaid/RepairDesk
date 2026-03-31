@@ -59,6 +59,13 @@ class AuthUserPayload(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    @field_validator("role", mode="before")
+    @classmethod
+    def coerce_role(cls, v):
+        if hasattr(v, "value"):
+            return v.value
+        return str(v) if v is not None else v
+
 
 class RefreshResponse(BaseModel):
     access_token: str

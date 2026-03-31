@@ -66,9 +66,18 @@ async def register(
         max_age=REFRESH_COOKIE_MAX_AGE,
     )
 
+    user_obj = result["user"]
+    user_payload = AuthUserPayload(
+        id=user_obj.id,
+        full_name=user_obj.full_name,
+        email=user_obj.email,
+        role=str(user_obj.role.value) if hasattr(user_obj.role, "value") else str(user_obj.role),
+        shop_id=user_obj.shop_id,
+    )
+
     return TokenResponse(
         access_token=result["access_token"],
-        user=AuthUserPayload.model_validate(result["user"]),
+        user=user_payload,
     )
 
 
@@ -92,9 +101,18 @@ async def login(
         max_age=REFRESH_COOKIE_MAX_AGE,
     )
 
+    user_obj = result["user"]
+    user_payload = AuthUserPayload(
+        id=user_obj.id,
+        full_name=user_obj.full_name,
+        email=user_obj.email,
+        role=str(user_obj.role.value) if hasattr(user_obj.role, "value") else str(user_obj.role),
+        shop_id=user_obj.shop_id,
+    )
+
     return TokenResponse(
         access_token=result["access_token"],
-        user=AuthUserPayload.model_validate(result["user"]),
+        user=user_payload,
     )
 
 
@@ -161,7 +179,16 @@ async def force_logout_login(
         max_age=REFRESH_COOKIE_MAX_AGE,
     )
 
+    user_obj = result["user"]
+    user_payload = AuthUserPayload(
+        id=user_obj.id,
+        full_name=user_obj.full_name,
+        email=user_obj.email,
+        role=str(user_obj.role.value) if hasattr(user_obj.role, "value") else str(user_obj.role),
+        shop_id=user_obj.shop_id,
+    )
+
     return TokenResponse(
         access_token=result["access_token"],
-        user=AuthUserPayload.model_validate(result["user"]),
+        user=user_payload,
     )
