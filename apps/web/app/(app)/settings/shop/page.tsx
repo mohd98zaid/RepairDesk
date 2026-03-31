@@ -212,7 +212,7 @@ export default function ShopSettingsPage() {
     };
 
     return (
-        <div className="p-6 max-w-2xl mx-auto space-y-6">
+        <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-6">
             {/* Page header */}
             <div>
                 <h1 className="text-2xl font-bold text-foreground">Settings</h1>

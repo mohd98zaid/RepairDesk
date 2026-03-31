@@ -174,7 +174,7 @@ export default function NewTicketPage() {
 
 
     return (
-        <div className="p-6 max-w-2xl mx-auto">
+        <div className="p-4 sm:p-6 max-w-2xl mx-auto">
             {/* Ticket Created Notify Modal */}
             {createdTicket && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">

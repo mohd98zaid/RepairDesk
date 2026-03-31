@@ -741,7 +741,7 @@ export default function TicketDetailPage() {
     const availableTransitions = STATUS_TRANSITIONS[ticket.status] ?? [];
 
     return (
-        <div className="p-6 max-w-4xl mx-auto">
+        <div className="p-4 sm:p-6 max-w-4xl mx-auto">
             {/* Header */}
             <div className="flex items-center gap-3 mb-6">
                 <Link href="/tickets" className="text-muted-foreground hover:text-foreground">
@@ -941,14 +941,14 @@ export default function TicketDetailPage() {
                                         type="number"
                                         value={estCostInput}
                                         onChange={e => setEstCostInput(e.target.value)}
-                                        className="w-20 bg-muted border border-border rounded px-2 py-1 text-sm text-foreground focus:outline-none focus:border-primary shadow-sm"
+                                        className="w-24 bg-muted border border-border rounded px-2 py-1 text-sm text-foreground focus:outline-none focus:border-primary shadow-sm"
                                         autoFocus
                                         placeholder="0.00"
                                     />
-                                    <button onClick={handleSaveEstCost} disabled={savingEstCost} className="p-1 hover:bg-success/20 text-success rounded transition disabled:opacity-50">
+                                    <button onClick={handleSaveEstCost} disabled={savingEstCost} className="p-2 hover:bg-success/20 text-success rounded transition disabled:opacity-50">
                                         {savingEstCost ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                                     </button>
-                                    <button onClick={() => setEditingEstCost(false)} disabled={savingEstCost} className="p-1 hover:bg-muted text-muted-foreground rounded transition disabled:opacity-50">
+                                    <button onClick={() => setEditingEstCost(false)} disabled={savingEstCost} className="p-2 hover:bg-muted text-muted-foreground rounded transition disabled:opacity-50">
                                         <XIcon className="w-3.5 h-3.5" />
                                     </button>
                                 </div>
@@ -976,14 +976,14 @@ export default function TicketDetailPage() {
                                         type="number"
                                         value={costInput}
                                         onChange={e => setCostInput(e.target.value)}
-                                        className="w-20 bg-muted border border-border rounded px-2 py-1 text-sm text-foreground focus:outline-none focus:border-primary shadow-sm"
+                                        className="w-24 bg-muted border border-border rounded px-2 py-1 text-sm text-foreground focus:outline-none focus:border-primary shadow-sm"
                                         autoFocus
                                         placeholder="0.00"
                                     />
-                                    <button onClick={handleSaveCost} disabled={savingCost} className="p-1 hover:bg-success/20 text-success rounded transition disabled:opacity-50">
+                                    <button onClick={handleSaveCost} disabled={savingCost} className="p-2 hover:bg-success/20 text-success rounded transition disabled:opacity-50">
                                         {savingCost ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                                     </button>
-                                    <button onClick={() => setEditingCost(false)} disabled={savingCost} className="p-1 hover:bg-muted text-muted-foreground rounded transition disabled:opacity-50">
+                                    <button onClick={() => setEditingCost(false)} disabled={savingCost} className="p-2 hover:bg-muted text-muted-foreground rounded transition disabled:opacity-50">
                                         <XIcon className="w-3.5 h-3.5" />
                                     </button>
                                 </div>
@@ -1072,7 +1072,7 @@ export default function TicketDetailPage() {
                                                 {ticket.status !== "DELIVERED" && ticket.status !== "CANCELLED" && (
                                                     <button
                                                         onClick={() => handleRemoveCharge(charge.id)}
-                                                        className="text-muted-foreground hover:text-danger transition"
+                                                        className="p-2 text-muted-foreground hover:text-danger hover:bg-danger/10 rounded-lg transition"
                                                         title="Remove charge"
                                                     >
                                                         <Trash2 className="w-3.5 h-3.5" />
@@ -1300,7 +1300,7 @@ export default function TicketDetailPage() {
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-foreground mb-1">
                                         Estimated Cost (₹)

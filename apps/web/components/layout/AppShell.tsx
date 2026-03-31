@@ -170,7 +170,7 @@ function NotificationsBell() {
     return (
         <div ref={ref} style={{ position: 'relative' }}>
             <button onClick={handleOpen}
-                className="relative flex items-center justify-center w-8 h-8 rounded-lg hover:bg-muted transition text-muted-foreground hover:text-foreground"
+                className="relative flex items-center justify-center w-10 h-10 rounded-lg hover:bg-muted transition text-muted-foreground hover:text-foreground"
                 title="Notifications">
                 <Bell className="w-4 h-4" />
                 {unread > 0 && (
@@ -222,12 +222,12 @@ function BottomNavItem({ href, label, icon: Icon }: { href: string; label: strin
         <Link
             href={href}
             className={clsx(
-                "flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition",
+                "flex flex-col items-center justify-center gap-0.5 px-2 py-1.5 min-h-[48px] rounded-lg transition",
                 isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
             )}
         >
             <Icon className="w-5 h-5" />
-            <span className="text-[10px] font-medium">{label}</span>
+            <span className="text-[11px] font-medium leading-tight">{label}</span>
         </Link>
     );
 }
@@ -735,26 +735,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     </div>
                     <span className="font-bold text-foreground">RepairDesk</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                     <OfflineSyncManager />
-                    <button onClick={() => setQrOpen(true)} className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted transition" title="Scan QR Code">
+                    <button onClick={() => setQrOpen(true)} className="w-10 h-10 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted transition" title="Scan QR Code">
                         <QrCode className="w-5 h-5" />
                     </button>
                     <NotificationsBell />
                     <Link
                         href="/tickets/new"
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg gradient-primary text-white text-xs font-medium"
+                        className="flex items-center gap-1 px-3 py-2 rounded-lg gradient-primary text-white text-xs font-medium min-h-[40px]"
                     >
                         <Plus className="w-3.5 h-3.5" /> New
                     </Link>
                     <button
                         onClick={handleLogout}
-                        className="text-muted-foreground hover:text-danger transition"
+                        className="w-10 h-10 flex items-center justify-center rounded-lg text-muted-foreground hover:text-danger hover:bg-muted transition"
                         title="Sign Out"
                     >
                         <LogOut className="w-5 h-5" />
                     </button>
-                    <button onClick={() => setMobileMenuOpen((v) => !v)} className="text-muted-foreground hover:text-foreground">
+                    <button onClick={() => setMobileMenuOpen((v) => !v)} className="w-10 h-10 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition">
                         {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
                     </button>
                 </div>

@@ -184,7 +184,7 @@ export default function RegisterPage() {
                     <span className="text-2xl font-bold text-foreground">RepairDesk</span>
                 </div>
 
-                <div className="glass rounded-2xl p-8 shadow-2xl">
+                <div className="glass rounded-2xl p-5 sm:p-8 shadow-2xl">
                     {/* Header based on step */}
                     <div className="mb-6">
                         {step === 1 && (

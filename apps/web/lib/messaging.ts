@@ -79,6 +79,7 @@ export function buildNewTicketMessage(data: TicketMessageData, appUrl: string): 
 export function buildStatusUpdateMessage(data: TicketMessageData, notes?: string): string {
   const ticketId = `RD-${String(data.ticketNumber).padStart(5, "0")}`;
   const statusLabel = STATUS_LABELS[data.status] ?? data.status.replace(/_/g, " ");
+  const appUrl = typeof window !== "undefined" ? window.location.origin : "";
   const lines = [
     `${EMOJI.bell} *Repair Update ${EMOJI.em_dash} ${ticketId}*`,
     ``,
@@ -90,6 +91,8 @@ export function buildStatusUpdateMessage(data: TicketMessageData, notes?: string
     `${EMOJI.pin} *New Status:* ${statusLabel}`,
     ...(notes ? [`${EMOJI.speech} *Note:* ${notes}`] : []),
     ...(data.finalCost ? [`${EMOJI.money} *Final Cost:* Rs. ${data.finalCost}`] : []),
+    ``,
+    `${EMOJI.link} *Track your repair:* ${appUrl}/feedback/${ticketId}`,
     ``,
     `Thank you for your patience! ${EMOJI.pray}`,
   ];
