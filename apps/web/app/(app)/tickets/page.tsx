@@ -75,9 +75,14 @@ export default function TicketsPage() {
     }, [search, statusFilter, page]);
 
     useEffect(() => {
-        const q = new URLSearchParams(window.location.search).get("q");
+        const urlParams = new URLSearchParams(window.location.search);
+        const q = urlParams.get("q");
+        const status = urlParams.get("status");
         if (q) {
             setSearch(q);
+        }
+        if (status) {
+            setStatusFilter(status);
         }
     }, []);
 

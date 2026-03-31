@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import {
     TrendingUp, IndianRupee, Ticket, Package,
     ChevronLeft, ChevronRight, BarChart2, Loader2, RefreshCw
@@ -204,10 +205,14 @@ export default function ReportsPage() {
                                     <h3 className="text-sm font-semibold text-foreground mb-3">Tickets by Status</h3>
                                     <div className="flex flex-wrap gap-3">
                                         {Object.entries(daily.tickets_by_status).map(([status, count]) => (
-                                            <div key={status} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted">
+                                            <Link
+                                                key={status}
+                                                href={`/tickets?status=${status}`}
+                                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 transition"
+                                            >
                                                 <span className="text-muted-foreground text-xs">{status.replace(/_/g, " ")}</span>
                                                 <span className="text-foreground font-bold text-sm">{count}</span>
-                                            </div>
+                                            </Link>
                                         ))}
                                     </div>
                                 </div>
