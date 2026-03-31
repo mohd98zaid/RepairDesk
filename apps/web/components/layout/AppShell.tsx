@@ -718,10 +718,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <aside className="hidden md:flex flex-col w-64 border-r border-border bg-card p-4 gap-2 h-screen overflow-y-auto sticky top-0">
                 {/* Logo + Bell */}
                 <div className="flex items-center gap-2.5 mb-4 px-1">
-                    <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0">
-                        <Wrench className="w-4 h-4 text-white" />
-                    </div>
-                    <span className="font-bold text-foreground text-lg flex-1">RepairDesk</span>
+                    <img src="/logo.png" alt="RepairDeskz" className="h-8 w-auto object-contain bg-white rounded-md flex-shrink-0" />
+                    <span className="flex-1"></span>
                     <OfflineSyncManager />
                     <NotificationsBell />
                 </div>
@@ -731,10 +729,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             {/* Mobile top bar */}
             <div className="md:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-3 bg-card/90 backdrop-blur-md border-b border-border">
                 <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg gradient-primary flex items-center justify-center">
-                        <Wrench className="w-3.5 h-3.5 text-white" />
-                    </div>
-                    <span className="font-bold text-foreground">RepairDesk</span>
+                    <img src="/logo.png" alt="RepairDeskz" className="h-7 w-auto object-contain bg-white rounded shadow-sm" />
                 </div>
                 <div className="flex items-center gap-1">
                     <OfflineSyncManager />

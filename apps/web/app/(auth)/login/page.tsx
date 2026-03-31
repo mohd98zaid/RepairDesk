@@ -171,10 +171,7 @@ export default function LoginPage() {
 
             <div className="relative w-full max-w-md">
                 <div className="flex items-center gap-3 mb-8 justify-center">
-                    <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
-                        <Wrench className="w-5 h-5 text-white" />
-                    </div>
-                    <span className="text-2xl font-bold text-foreground">RepairDesk</span>
+                    <img src="/logo.png" alt="RepairDeskz" className="h-10 w-auto object-contain bg-white rounded-xl p-1 shadow-lg" />
                 </div>
 
                 <div className="glass rounded-2xl p-5 sm:p-8 shadow-2xl">
