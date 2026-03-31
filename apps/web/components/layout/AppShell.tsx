@@ -728,11 +728,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </aside>
 
             {/* Mobile top bar */}
-            <div className="md:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-2 bg-card/90 backdrop-blur-md border-b border-border">
+            <div className="md:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-3 bg-card/90 backdrop-blur-md border-b border-border">
                 <div className="flex items-center gap-2">
-                    <div className="bg-white rounded w-[100px] h-6 flex items-center justify-center overflow-hidden shadow-sm px-1.5 py-0.5">
-                        <img src="/logo.png" alt="RepairDeskz" className="w-full h-auto object-contain scale-[1.2]" />
-                    </div>
+                    <span className="text-lg font-bold gradient-text">RepairDeskz</span>
                 </div>
                 <div className="flex items-center gap-1">
                     <OfflineSyncManager />
