@@ -51,6 +51,14 @@ async def lifespan(app: FastAPI):
     #     # async with engine.begin() as conn:
     #     #     await conn.run_sync(Base.metadata.create_all, checkfirst=True)
 
+    # Automatically apply Alembic migrations on startup in production (for Hobby tiers without shell access)
+    if settings.is_production:
+        import os
+        import logging
+        logger = logging.getLogger("repairdesk.startup")
+        logger.info("Running Alembic migrations automatically on startup...")
+        os.system("alembic upgrade head")
+
     # Validate secrets
     import logging
     _logger = logging.getLogger("repairdesk.startup")
