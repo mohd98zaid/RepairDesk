@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "test:ui": "vitest run --dir __tests__/ui",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed"
@@ -47,6 +48,7 @@
     "@vitejs/plugin-react": "^5.1.4",
     "eslint": "^10.0.1",
     "eslint-config-next": "^0.2.4",
+    "fake-indexeddb": "^6.2.5",
     "jsdom": "^28.1.0",
     "tailwindcss": "^4",
     "typescript": "^5",

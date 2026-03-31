@@ -84,9 +84,20 @@ export function getApiClient(): AxiosInstance {
                 if (!refreshing) {
                     refreshing = true;
                     try {
+                        let body = {};
+                        try {
+                            const raw = localStorage.getItem(AUTH_KEY);
+                            if (raw) {
+                                const { state } = JSON.parse(raw);
+                                if (state?.refreshToken) {
+                                    body = { refresh_token: state.refreshToken };
+                                }
+                            }
+                        } catch { /* ignore */ }
+
                         const { data } = await axios.post(
                             `${API_URL}/auth/refresh`,
-                            {},
+                            body,
                             { withCredentials: true }
                         );
                         const newToken: string = data.access_token;

@@ -170,9 +170,10 @@ function NotificationsBell() {
     return (
         <div ref={ref} style={{ position: 'relative' }}>
             <button onClick={handleOpen}
-                className="relative flex items-center justify-center w-10 h-10 rounded-lg hover:bg-muted transition text-muted-foreground hover:text-foreground"
-                title="Notifications">
-                <Bell className="w-4 h-4" />
+                className="relative flex items-center justify-center w-11 h-11 rounded-lg hover:bg-muted transition text-muted-foreground hover:text-foreground"
+                title="Notifications"
+                aria-label="Notifications">
+                <Bell className="w-5 h-5" />
                 {unread > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-danger text-white text-[9px] font-bold rounded-full flex items-center justify-center">
                         {unread}
@@ -596,7 +597,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }
         try {
             const { state } = JSON.parse(raw);
-            if (!state?.accessToken || isTokenExpired(state?.accessToken)) {
+            if (!state?.accessToken) {
                 localStorage.removeItem("repairdesk-auth");
                 router.push("/login");
             }
@@ -703,7 +704,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
     if (!mounted) {
         return (
-            <div className="min-h-screen flex bg-background">
+            <div className="min-h-[100dvh] flex bg-background">
                 {/* Skeleton placeholder while client hydrates */}
                 <aside className="hidden md:flex flex-col w-64 border-r border-border p-4 gap-2 h-screen" />
                 <main className="flex-1 flex flex-col min-w-0" />
@@ -712,7 +713,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
 
     return (
-        <div className="min-h-screen flex bg-background">
+        <div className="min-h-[100dvh] flex bg-background">
             {/* Desktop Sidebar */}
             <aside className="hidden md:flex flex-col w-64 border-r border-border bg-card p-4 gap-2 h-screen overflow-y-auto sticky top-0">
                 {/* Logo + Bell */}
@@ -737,24 +738,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
                 <div className="flex items-center gap-1">
                     <OfflineSyncManager />
-                    <button onClick={() => setQrOpen(true)} className="w-10 h-10 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted transition" title="Scan QR Code">
+                    <button onClick={() => setQrOpen(true)} className="w-11 h-11 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted transition" title="Scan QR Code" aria-label="Scan QR Code">
                         <QrCode className="w-5 h-5" />
                     </button>
                     <NotificationsBell />
                     <Link
                         href="/tickets/new"
-                        className="flex items-center gap-1 px-3 py-2 rounded-lg gradient-primary text-white text-xs font-medium min-h-[40px]"
+                        className="flex items-center gap-1 px-3 py-2 rounded-lg gradient-primary text-white text-xs font-medium min-h-[44px]"
+                        aria-label="New Ticket"
                     >
-                        <Plus className="w-3.5 h-3.5" /> New
+                        <Plus className="w-4 h-4" /> New
                     </Link>
                     <button
                         onClick={handleLogout}
-                        className="w-10 h-10 flex items-center justify-center rounded-lg text-muted-foreground hover:text-danger hover:bg-muted transition"
+                        className="w-11 h-11 flex items-center justify-center rounded-lg text-muted-foreground hover:text-danger hover:bg-muted transition"
                         title="Sign Out"
+                        aria-label="Sign Out"
                     >
                         <LogOut className="w-5 h-5" />
                     </button>
-                    <button onClick={() => setMobileMenuOpen((v) => !v)} className="w-10 h-10 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition">
+                    <button onClick={() => setMobileMenuOpen((v) => !v)} className="w-11 h-11 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition" aria-label="Toggle Mobile Menu">
                         {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
                     </button>
                 </div>

@@ -45,7 +45,7 @@ export default function AdminLoginPage() {
                             type="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            placeholder="admin@repairdesk.app"
+                            placeholder="admin@example.com"
                             required
                             autoFocus
                         />
@@ -76,7 +76,7 @@ export default function AdminLoginPage() {
 
             <style jsx>{`
         .admin-login-root {
-          min-height: 100vh;
+          min-height: 100dvh;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -92,6 +92,11 @@ export default function AdminLoginPage() {
           width: 100%;
           max-width: 420px;
           box-shadow: 0 32px 80px rgba(0,0,0,0.4);
+        }
+        @media (max-width: 400px) {
+          .admin-login-card {
+            padding: 32px 24px;
+          }
         }
         .admin-login-brand {
           text-align: center;
