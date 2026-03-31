@@ -1266,11 +1266,11 @@ export default function TicketDetailPage() {
                                     </label>
                                 </div>
                             )}
-                            <div className="space-y-2">
+                            <div className="grid grid-cols-2 md:grid-cols-1 gap-2">
                                 {availableTransitions.map((status) => (
                                     <button key={status} onClick={() => handleStatusChange(status)}
                                         disabled={changingStatus}
-                                        className="w-full py-2 px-3 rounded-lg bg-muted border border-border shadow-sm hover:bg-muted/80 text-foreground font-medium text-sm text-left transition disabled:opacity-50 flex items-center justify-between">
+                                        className="py-2 px-3 rounded-lg bg-muted border border-border shadow-sm hover:bg-muted/80 text-foreground font-medium text-sm transition disabled:opacity-50 flex items-center justify-between min-h-[44px]">
                                         <span>{STATUS_LABELS[status] ?? status.replace(/_/g, " ")}</span>
                                         {changingStatus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground -rotate-90" />}
                                     </button>
