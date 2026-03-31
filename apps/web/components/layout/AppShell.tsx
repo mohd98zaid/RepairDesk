@@ -749,14 +749,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     >
                         <Plus className="w-4 h-4" /> New
                     </Link>
-                    <button
-                        onClick={handleLogout}
-                        className="w-11 h-11 flex items-center justify-center rounded-lg text-muted-foreground hover:text-danger hover:bg-muted transition"
-                        title="Sign Out"
-                        aria-label="Sign Out"
-                    >
-                        <LogOut className="w-5 h-5" />
-                    </button>
+
                     <button onClick={() => setMobileMenuOpen((v) => !v)} className="w-11 h-11 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition" aria-label="Toggle Mobile Menu">
                         {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
                     </button>
