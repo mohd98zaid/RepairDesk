@@ -13,8 +13,6 @@ import {
     Activity,
     ImageIcon,
     ChevronDown,
-    FileText,
-    Download,
     MessageSquare,
     Star,
     Printer,
@@ -23,7 +21,6 @@ import {
     X as XIcon,
     Trash2,
     Shield,
-    CreditCard,
     CheckCircle,
     Plus,
     QrCode,
@@ -31,7 +28,6 @@ import {
     Phone as PhoneIcon,
 } from "lucide-react";
 import { ticketsApi } from "@/lib/api/tickets";
-import { invoicesApi } from "@/lib/api/reports";
 import { teamApi } from "@/lib/api/team";
 import { StatusBadge } from "@/components/tickets/StatusBadge";
 import { PartsSelector } from "@/components/tickets/PartsSelector";
@@ -365,7 +361,7 @@ function PrintLabel({ ticket, shopName }: {
 </div>
 
 <!-- ── Charges table ── -->
-<div class="section-title">Charges Breakdown</div>
+<div class="section-title">Repair Details & Cost</div>
 <table>
   <thead>
     <tr>
@@ -374,7 +370,8 @@ function PrintLabel({ ticket, shopName }: {
     </tr>
   </thead>
   <tbody>
-    ${partsCost > 0 ? `<tr><td>Parts &amp; Components</td><td>Rs. ${partsCost.toFixed(2)}</td></tr>` : ""}
+    ${(ticket.parts || []).map((p: any) => `<tr><td>${escHtml(p.name)} (x${p.quantity || p.quantity_used || 1})</td><td>Rs. ${((p.quantity || p.quantity_used || 1) * parseFloat(p.cost || p.unit_selling_price || "0")).toFixed(2)}</td></tr>`).join("")}
+    ${!(ticket.parts?.length) && partsCost > 0 ? `<tr><td>Parts &amp; Components</td><td>Rs. ${partsCost.toFixed(2)}</td></tr>` : ""}
     ${charges.map(c => `<tr><td>${escHtml(c.name)}</td><td>Rs. ${parseFloat(c.amount).toFixed(2)}</td></tr>`).join("")}
     ${partsCost === 0 && charges.length === 0 ? `<tr><td colspan="2" style="color:#9ca3af;text-align:center;padding:12px">No charges added yet</td></tr>` : ""}
     <tr class="total-row">
@@ -483,10 +480,7 @@ export default function TicketDetailPage() {
     const [statusNotes, setStatusNotes] = useState("");
     const [changingStatus, setChangingStatus] = useState(false);
     const [statusError, setStatusError] = useState<string | null>(null);
-    const [invoice, setInvoice] = useState<{ invoice_number: string; download_url: string } | null>(null);
     const [showStatusModal, setShowStatusModal] = useState(false);
-    const [generatingInvoice, setGeneratingInvoice] = useState(false);
-    const [checkoutLoading, setCheckoutLoading] = useState(false);
 
     // Const editing state
     const [editingCost, setEditingCost] = useState(false);
@@ -509,39 +503,9 @@ export default function TicketDetailPage() {
 
     useEffect(() => {
         ticketsApi.get(id).then(setTicket).finally(() => setLoading(false));
-        // Try to load existing invoice
-        invoicesApi.get(id).then(setInvoice).catch(() => {/* not yet generated */ });
         // Load team members for assignment
         teamApi.list().then(setTeam).catch(() => {/* ignore */ });
     }, [id]);
-
-    const handleGenerateInvoice = async () => {
-        if (!ticket) return;
-        setGeneratingInvoice(true);
-        try {
-            const res = await invoicesApi.generate(ticket.id);
-            setInvoice(res);
-        } catch (error) {
-            alert("Failed to generate invoice.");
-        } finally {
-            setGeneratingInvoice(false);
-        }
-    };
-
-    const handleCheckout = async () => {
-        if (!ticket) return;
-        setCheckoutLoading(true);
-        try {
-            const res = await ticketsApi.createCheckout(ticket.id, `Repair Ticket #${ticket.ticket_number}`);
-            if (res.url) {
-                window.location.href = res.url;
-            }
-        } catch (error) {
-            alert("Failed to initiate payment.");
-        } finally {
-            setCheckoutLoading(false);
-        }
-    };
 
     // Notify via messaging state
     const [notifyWhatsApp, setNotifyWhatsApp] = useState(false);
@@ -761,25 +725,6 @@ export default function TicketDetailPage() {
                 {/* Invoice + Print buttons — wrap on mobile */}
                 <div className="flex items-center gap-2 flex-wrap ml-8 sm:ml-0">
                     <PrintLabel ticket={ticket} shopName={(user as any)?.shop_name || "RepairDesk"} />
-                    {invoice ? (
-                        <>
-                            <a href={invoice.download_url} target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted border border-border shadow-sm hover:bg-muted/80 text-foreground text-sm transition whitespace-nowrap">
-                                <Download className="w-4 h-4" />{invoice.invoice_number}
-                            </a>
-                            <button onClick={handleCheckout} disabled={checkoutLoading}
-                                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition shadow-sm disabled:opacity-50 whitespace-nowrap">
-                                {checkoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-                                Pay Now
-                            </button>
-                        </>
-                    ) : (
-                        <button onClick={handleGenerateInvoice} disabled={generatingInvoice}
-                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted border border-border shadow-sm hover:bg-muted/80 text-foreground text-sm transition disabled:opacity-50 whitespace-nowrap">
-                            {generatingInvoice ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                            Invoice
-                        </button>
-                    )}
                 </div>
             </div>
 
