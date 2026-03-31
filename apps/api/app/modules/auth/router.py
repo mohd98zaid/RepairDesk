@@ -61,8 +61,8 @@ async def register(
         key=REFRESH_COOKIE_NAME,
         value=result["refresh_token"],
         httponly=True,
-        secure=settings.is_production,
-        samesite="lax",
+        secure=True,
+        samesite="none",
         max_age=REFRESH_COOKIE_MAX_AGE,
     )
 
@@ -87,8 +87,8 @@ async def login(
         key=REFRESH_COOKIE_NAME,
         value=result["refresh_token"],
         httponly=True,
-        secure=settings.is_production,
-        samesite="lax",
+        secure=True,
+        samesite="none",
         max_age=REFRESH_COOKIE_MAX_AGE,
     )
 
@@ -156,8 +156,8 @@ async def force_logout_login(
         key=REFRESH_COOKIE_NAME,
         value=result["refresh_token"],
         httponly=True,
-        secure=settings.is_production,
-        samesite="lax",
+        secure=True,
+        samesite="none",
         max_age=REFRESH_COOKIE_MAX_AGE,
     )
 
