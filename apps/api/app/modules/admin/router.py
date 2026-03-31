@@ -61,15 +61,17 @@ AdminUser = Depends(_get_admin_user)
 # ─────────────────────────── Migrations (TEMPORARY) ───────────────────────────
 
 @router.get("/run-migrations")
-async def run_migrations_endpoint():
-    """Run alembic upgrade head and return the output."""
+async def run_migrations_endpoint(command: str = "upgrade head"):
+    """Run alembic command and return the output."""
     import subprocess
     import sys
     import os
+    import shlex
     try:
         alembic_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         executable = sys.executable
-        result = subprocess.run([executable, "-m", "alembic", "upgrade", "head"], cwd=alembic_dir, capture_output=True, text=True)
+        args = shlex.split(command)
+        result = subprocess.run([executable, "-m", "alembic"] + args, cwd=alembic_dir, capture_output=True, text=True)
         return {
             "cwd": alembic_dir,
             "executable": executable,
