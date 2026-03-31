@@ -31,53 +31,34 @@ migration:
 # -------------------------------------------------------
 # Testing
 # -------------------------------------------------------
-.PHONY: test test-api test-web
+.PHONY: test test-api test-web test-breaking test-security test-edge test-cors test-failure test-ci test-coverage test-kw
 test: test-api test-web
 
 test-api:
 	$(COMPOSE_DEV) exec api pytest tests/ -v --cov=app --cov-report=term-missing
 
-test-web:
-	$(COMPOSE_DEV) exec web npm run lint && $(COMPOSE_DEV) exec web npm run type-check
-
-# -------------------------------------------------------
-# Production
-# -------------------------------------------------------
-.PHONY: build up down logs
-build:
-	$(COMPOSE_PROD) build
-
-up:
-	$(COMPOSE_PROD) up -d
-
-down:
-	$(COMPOSE_PROD) down
-
-logs:
-	$(COMPOSE_PROD) logs -f
-
-# -------------------------------------------------------
-# Utilities
-# -------------------------------------------------------
-.PHONY: shell-api shell-db seed
-shell-api:
-	$(COMPOSE_DEV) exec api bash
-
-shell-db:
-	$(COMPOSE_DEV) exec postgres psql -U repairdesk_user -d repairdesk
-
-seed:
-	$(COMPOSE_DEV) exec api python scripts/seed.py
-
-# -------------------------------------------------------
-# Security Audit
-# -------------------------------------------------------
-.PHONY: audit audit-fix test-security
-audit:
-	$(COMPOSE_DEV) exec api python scripts/audit_fix.py audit
-
-audit-fix:
-	$(COMPOSE_DEV) exec api python scripts/audit_fix.py full
+test-breaking:
+	$(COMPOSE_DEV) exec api pytest tests/breaking/ -v --tb=short
 
 test-security:
-	$(COMPOSE_DEV) exec api pytest tests/security/ -v --tb=short
+	$(COMPOSE_DEV) exec api pytest tests/breaking/test_security.py tests/security/ -v --tb=short
+
+test-edge:
+	$(COMPOSE_DEV) exec api pytest tests/breaking/test_edge_cases.py -v --tb=short
+
+test-cors:
+	$(COMPOSE_DEV) exec api pytest tests/breaking/test_cors_network.py -v --tb=short
+
+test-failure:
+	$(COMPOSE_DEV) exec api pytest tests/breaking/test_failure_injection.py -v --tb=short
+
+test-web:
+	$(COMPOSE_DEV) exec web npm run lint && $(COMPOSE_DEV) exec web npm run type-check && $(COMPOSE_DEV) exec web npm run test
+
+test-ci: test-breaking test-security test-web
+
+test-coverage:
+	$(COMPOSE_DEV) exec api pytest tests/ -v --cov=app --cov-report=term-missing --cov-report=html
+
+test-kw:
+	$(COMPOSE_DEV) exec api pytest tests/ -v --tb=short -k "$(KW)"

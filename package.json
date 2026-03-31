@@ -3,7 +3,16 @@
     "private": true,
     "scripts": {
         "build": "npm run build --prefix apps/web",
-        "vercel-build": "npm run build --prefix apps/web"
+        "vercel-build": "npm run build --prefix apps/web",
+        "test": "npm run test --prefix apps/web && cd apps/api && python -m pytest tests/ -v --tb=short",
+        "test:api": "cd apps/api && python -m pytest tests/ -v --tb=short",
+        "test:api:breaking": "cd apps/api && python -m pytest tests/breaking/ -v --tb=short",
+        "test:api:security": "cd apps/api && python -m pytest tests/breaking/test_security.py -v --tb=short",
+        "test:api:edge": "cd apps/api && python -m pytest tests/breaking/test_edge_cases.py -v --tb=short",
+        "test:api:cors": "cd apps/api && python -m pytest tests/breaking/test_cors_network.py -v --tb=short",
+        "test:api:failure": "cd apps/api && python -m pytest tests/breaking/test_failure_injection.py -v --tb=short",
+        "test:web": "npm run test --prefix apps/web",
+        "test:ci": "npm run test:api:breaking && npm run test:api:security && npm run test:web"
     },
     "dependencies": {
         "react": "19.2.3",
