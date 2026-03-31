@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, String, Text, func, Index
+from sqlalchemy import Boolean, DateTime, Enum, Integer, String, Text, func, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,6 +43,7 @@ class Shop(Base):
         String(20), nullable=False, default="ACTIVE", server_default="ACTIVE"
     )
     admin_note: Mapped[str | None] = mapped_column(Text)  # internal note from admin
+    custom_device_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)  # admin override; None = use plan default
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

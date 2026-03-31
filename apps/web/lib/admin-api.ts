@@ -79,6 +79,15 @@ export async function deleteShop(id: string) {
   await adminAxios.delete(`/shops/${id}`);
 }
 
+export async function updateShop(id: string, payload: {
+  shop_status?: string;
+  admin_note?: string | null;
+  custom_device_limit?: number | null;
+}) {
+  const res = await adminAxios.patch(`/shops/${id}`, payload);
+  return res.data as { id: string; shop_status: string; admin_note: string | null; custom_device_limit: number | null };
+}
+
 export async function restrictShop(id: string) {
   const res = await adminAxios.post(`/shops/${id}/restrict`);
   return res.data;
@@ -215,6 +224,8 @@ export interface ShopDetail extends ShopSummary {
   stats: { tickets: number; customers: number; members: number; inventory_items: number };
   shop_status: string;
   admin_note: string | null;
+  custom_device_limit: number | null;
+  plan: string;
 }
 
 export interface TeamMember {

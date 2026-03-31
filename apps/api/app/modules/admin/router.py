@@ -715,6 +715,9 @@ async def get_shop_detail(
         "phone": shop.phone,
         "is_active": shop.is_active,
         "shop_status": shop.shop_status,
+        "admin_note": shop.admin_note,
+        "custom_device_limit": shop.custom_device_limit,
+        "plan": shop.plan,
         "created_at": shop.created_at.isoformat(),
         "owner": {"full_name": owner.full_name, "email": owner.email, "id": str(owner.id)} if owner else None,
         "stats": {
@@ -723,6 +726,60 @@ async def get_shop_detail(
             "members": mc.scalar_one(),
             "inventory_items": ic.scalar_one(),
         },
+    }
+
+
+@router.patch("/shops/{shop_id}")
+async def update_shop_admin(
+    shop_id: uuid.UUID,
+    body: dict,
+    admin: dict = AdminUser,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Admin-only: update shop_status, admin_note, and/or custom_device_limit."""
+    result = await db.execute(select(Shop).where(Shop.id == shop_id))
+    shop = result.scalar_one_or_none()
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    ALLOWED = {"shop_status", "admin_note", "custom_device_limit"}
+    VALID_STATUSES = {"ACTIVE", "RESTRICTED", "BLOCKED", "INACTIVE"}
+    changed_fields = []
+
+    for field in ALLOWED:
+        if field not in body:
+            continue
+        value = body[field]
+
+        if field == "shop_status":
+            if value not in VALID_STATUSES:
+                raise HTTPException(status_code=422, detail=f"Invalid shop_status '{value}'.")
+
+        if field == "custom_device_limit":
+            # Accept None (reset to plan default), or a non-negative integer
+            if value is not None:
+                if not isinstance(value, int) or value < 0:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="custom_device_limit must be a non-negative integer or null."
+                    )
+
+        setattr(shop, field, value)
+        changed_fields.append(field)
+
+    await db.commit()
+    await db.refresh(shop)
+
+    _emit_audit(
+        "UPDATE_SHOP", admin.get("email", "admin"), str(shop_id),
+        f"Updated fields: {', '.join(changed_fields)}"
+    )
+
+    return {
+        "id": str(shop.id),
+        "shop_status": shop.shop_status,
+        "admin_note": shop.admin_note,
+        "custom_device_limit": shop.custom_device_limit,
     }
 
 

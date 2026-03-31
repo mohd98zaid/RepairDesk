@@ -166,18 +166,27 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
     redis = await get_redis()
     session_id = str(uuid.uuid4())
 
-    # Enforce device limits (defensive — billing tables may not exist)
+    # Enforce device limits:
+    # 1. Admin custom override takes priority over everything
+    # 2. Fall back to billing plan feature (device_limit)
+    # 3. Default to 1 if nothing is configured
+    custom_limit = getattr(shop, "custom_device_limit", None) if shop else None
     device_limit = 1
-    try:
-        from app.modules.billing.service import has_feature
-        device_limit_str = await has_feature(user.shop_id, "device_limit", db)
 
-        if device_limit_str in ("unlimited", "-1"):
-            device_limit = -1
-        else:
-            device_limit = int(device_limit_str) if device_limit_str and device_limit_str.isdigit() else 1
-    except Exception:
-        device_limit = 1
+    if custom_limit is not None:
+        # Admin-set override: 0 or negative = unlimited
+        device_limit = -1 if custom_limit <= 0 else custom_limit
+    else:
+        try:
+            from app.modules.billing.service import has_feature
+            device_limit_str = await has_feature(user.shop_id, "device_limit", db)
+
+            if device_limit_str in ("unlimited", "-1"):
+                device_limit = -1
+            else:
+                device_limit = int(device_limit_str) if device_limit_str and device_limit_str.isdigit() else 1
+        except Exception:
+            device_limit = 1
 
     # Collect all active session keys for this user
     all_session_keys: list[str] = []
