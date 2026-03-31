@@ -125,9 +125,10 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def generic_exception_handler(request: Request, exc: Exception):
         """Catch-all handler to prevent raw 500s without CORS headers."""
-        import logging
+        import logging, traceback
         logger = logging.getLogger("repairdesk.error")
-        logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True)
+        tb = traceback.format_exc()
+        logger.error(f"Unhandled exception on {request.url.path}: {exc}\n{tb}")
         headers = {}
         origin = request.headers.get("origin", "")
         if origin and origin in settings.cors_origins:
@@ -135,7 +136,12 @@ def create_app() -> FastAPI:
             headers["Access-Control-Allow-Credentials"] = "true"
         return JSONResponse(
             status_code=500,
-            content={"detail": "Internal server error"},
+            content={
+                "detail": "Internal server error",
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+                "traceback": tb,
+            },
             headers=headers,
         )
 
@@ -306,6 +312,12 @@ def create_app() -> FastAPI:
                     ALTER TABLE shops ADD COLUMN IF NOT EXISTS short_id VARCHAR(12);
                     ALTER TABLE customers ADD COLUMN IF NOT EXISTS short_id VARCHAR(10);
                     ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS short_id VARCHAR(10);
+                """))
+                
+                # Add shop_status and admin_note (missing from production)
+                await session.execute(text("""
+                    ALTER TABLE shops ADD COLUMN IF NOT EXISTS shop_status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE';
+                    ALTER TABLE shops ADD COLUMN IF NOT EXISTS admin_note TEXT;
                 """))
                 
                 await session.commit()
