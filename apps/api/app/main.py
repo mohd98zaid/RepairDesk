@@ -475,11 +475,15 @@ def create_app() -> FastAPI:
                             to_status ticket_status NOT NULL,
                             notes TEXT,
                             changed_by UUID REFERENCES users(id),
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                            changed_at TIMESTAMPTZ NOT NULL DEFAULT now()
                         );
                     """))
                     await session.execute(text("CREATE INDEX IF NOT EXISTS idx_status_logs_ticket_id ON ticket_status_logs(ticket_id)"))
-                    results.append("ticket_status_logs: created/exists")
+
+                    # Patch existing table
+                    await session.execute(text("ALTER TABLE ticket_status_logs ADD COLUMN IF NOT EXISTS changed_at TIMESTAMPTZ NOT NULL DEFAULT now()"))
+
+                    results.append("ticket_status_logs: created/exists + patched")
                 except Exception as e:
                     results.append(f"ticket_status_logs: error ({type(e).__name__})")
 
