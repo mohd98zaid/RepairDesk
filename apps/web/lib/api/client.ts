@@ -65,7 +65,7 @@ export function getApiClient(): AxiosInstance {
     });
 
     // Attach Bearer token from localStorage on every request
-    client.interceptors.request.use((config) => {
+    client.interceptors.request.use((config: any) => {
         const token = getStoredToken();
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
@@ -75,7 +75,7 @@ export function getApiClient(): AxiosInstance {
 
     // Auto-refresh on 401
     client.interceptors.response.use(
-        (res) => res,
+        (res: any) => res,
         async (error: AxiosError<ApiError>) => {
             const original = error.config as typeof error.config & { _retry?: boolean };
             if (error.response?.status === 401 && !original?._retry) {

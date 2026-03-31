@@ -301,7 +301,7 @@ async def subscribe_shop(
     shop_id: uuid.UUID,
     plan_id: uuid.UUID,
     billing_cycle: str = "monthly",
-    db: AsyncSession = None,
+    db: AsyncSession = None,  # type: ignore[assignment]  — callers always pass db
 ) -> Subscription:
     """
     Subscribe a shop to a plan.
@@ -311,8 +311,11 @@ async def subscribe_shop(
     now = datetime.now(timezone.utc)
 
     # Cancel existing subscription
+    # Fix #4: eager-load plan so .plan.slug is safe to access in async context
     existing_result = await db.execute(
-        select(Subscription).where(
+        select(Subscription)
+        .options(selectinload(Subscription.plan))
+        .where(
             Subscription.shop_id == shop_id,
             Subscription.status == "active",
         )
@@ -367,7 +370,9 @@ async def cancel_subscription(shop_id: uuid.UUID, db: AsyncSession) -> None:
     """Cancel the active subscription for a shop."""
     now = datetime.now(timezone.utc)
     result = await db.execute(
-        select(Subscription).where(
+        select(Subscription)
+        .options(selectinload(Subscription.plan))
+        .where(
             Subscription.shop_id == shop_id,
             Subscription.status == "active",
         )

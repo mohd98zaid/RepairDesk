@@ -66,7 +66,7 @@ async def create_ticket(
         raise ValidationException("Provide either customer_id or customer_phone.")
 
     # Enforce ticket_limit feature
-    from app.modules.billing.service import has_feature, check_feature_limit
+    from app.modules.billing.service import has_feature
     from app.core.audit_logger import log_limit_blocked
     ticket_limit_val = await has_feature(shop_id, "ticket_limit", db)
     if ticket_limit_val and ticket_limit_val != "unlimited" and ticket_limit_val != "-1":

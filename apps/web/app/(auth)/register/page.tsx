@@ -40,7 +40,7 @@ type DetailsData = z.infer<typeof detailsSchema>;
 
 export default function RegisterPage() {
     const router = useRouter();
-    const setAuth = useAuthStore((s) => s.setAuth);
+    const setAuth = useAuthStore((s: any) => s.setAuth);
 
     const [step, setStep] = useState<1 | 2 | 3>(1);
     const [email, setEmail] = useState("");

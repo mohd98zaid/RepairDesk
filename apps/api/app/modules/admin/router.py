@@ -215,21 +215,25 @@ async def get_platform_analytics(
 
 # ─────────────────────────── Audit Log ───────────────────────────
 
-# In-memory audit log (replace with DB table in production)
-_AUDIT_LOG: list[dict] = []
-
-def _emit_audit(action: str, admin_email: str, target: str = "", detail: str = ""):
-    _AUDIT_LOG.append({
+async def _emit_audit(action: str, admin_email: str, target: str = "", detail: str = ""):
+    """Write an audit log entry to Redis LPUSH (capped list, survives worker restarts)."""
+    from app.core.redis import get_redis
+    import json as _json
+    entry = {
         "id": str(uuid.uuid4()),
         "action": action,
         "admin": admin_email,
         "target": target,
         "detail": detail,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
-    # Keep last 1000 entries
-    if len(_AUDIT_LOG) > 1000:
-        _AUDIT_LOG.pop(0)
+    }
+    try:
+        r = await get_redis()
+        await r.lpush("admin:audit_log", _json.dumps(entry))
+        await r.ltrim("admin:audit_log", 0, 999)  # keep last 1000
+    except Exception:
+        pass  # never block an admin action due to Redis hiccup
+
 
 @router.get("/audit-logs")
 async def get_audit_logs(
@@ -237,8 +241,12 @@ async def get_audit_logs(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
 ) -> dict[str, Any]:
-    """Return recent admin audit log entries."""
-    logs = list(reversed(_AUDIT_LOG))
+    """Return recent admin audit log entries (Redis-backed, survives worker restarts)."""
+    from app.core.redis import get_redis
+    import json as _json
+    r = await get_redis()
+    logs_raw = await r.lrange("admin:audit_log", 0, -1)  # already newest-first (LPUSH)
+    logs = [_json.loads(entry) for entry in logs_raw]
     total = len(logs)
     offset = (page - 1) * per_page
     return {"total": total, "page": page, "per_page": per_page, "items": logs[offset:offset + per_page]}
@@ -265,17 +273,20 @@ async def impersonate_shop(
     shop_result = await db.execute(select(Shop).where(Shop.id == shop_id))
     shop = shop_result.scalar_one_or_none()
 
+    import uuid as _uuid_mod
+    session_id = str(_uuid_mod.uuid4())
     token_data = {
         "sub": str(owner.id),
         "shop_id": str(owner.shop_id),
         "role": owner.role,
         "shop_status": getattr(shop, "shop_status", "ACTIVE"),
+        "session_id": session_id,
         "_impersonated_by": admin.get("email", "admin"),
     }
     # Short-lived: 15 minutes
     token = create_access_token(token_data, expires_delta=timedelta(minutes=15))
 
-    _emit_audit("IMPERSONATE", admin.get("email", "admin"), str(shop_id),
+    await _emit_audit("IMPERSONATE", admin.get("email", "admin"), str(shop_id),
                 f"Impersonated owner {owner.email}")
 
     return {
@@ -342,14 +353,14 @@ async def global_search(
 
 # ─────────────────────────── Broadcasts ───────────────────────────
 
-_BROADCASTS: list[dict] = []
-
 @router.post("/broadcast", status_code=201)
 async def create_broadcast(
     body: dict,
     admin: dict = AdminUser,
 ) -> dict[str, Any]:
-    """Send a platform-wide message to all shop owners."""
+    """Send a platform-wide message to all shop owners (Redis-backed)."""
+    from app.core.redis import get_redis
+    import json as _json
     title = (body.get("title") or "").strip()
     message = (body.get("message") or "").strip()
     if not title or not message:
@@ -363,14 +374,31 @@ async def create_broadcast(
         "sent_by": admin.get("email", "admin"),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    _BROADCASTS.insert(0, entry)
-    _emit_audit("BROADCAST", admin.get("email", "admin"), "", f"Sent: {title}")
+    r = await get_redis()
+    await r.lpush("admin:broadcasts", _json.dumps(entry))
+    await r.ltrim("admin:broadcasts", 0, 199)  # keep last 200
+    await _emit_audit("BROADCAST", admin.get("email", "admin"), "", f"Sent: {title}")
     return entry
+
+
+@router.get("/broadcasts/latest")
+async def get_latest_broadcasts() -> list[dict]:
+    """Return latest 10 broadcasts. Public endpoint — no admin auth required."""
+    from app.core.redis import get_redis
+    import json as _json
+    r = await get_redis()
+    raw = await r.lrange("admin:broadcasts", 0, 9)
+    return [_json.loads(b) for b in raw]
+
 
 @router.get("/broadcasts")
 async def list_broadcasts(admin: dict = AdminUser) -> list[dict]:
-    """List all broadcasts sent by admin."""
-    return _BROADCASTS
+    """List all broadcasts sent by admin (Redis-backed)."""
+    from app.core.redis import get_redis
+    import json as _json
+    r = await get_redis()
+    raw = await r.lrange("admin:broadcasts", 0, -1)
+    return [_json.loads(b) for b in raw]
 
 
 # ─────────────────────────── CSV Export ───────────────────────────
@@ -397,7 +425,7 @@ async def export_shops_csv(
         writer.writerow([str(r[0]), r[1], r[2] or "", r[3] or "", r[4] or "", r[5] or "", str(r[6])])
 
     buf.seek(0)
-    _emit_audit("EXPORT", admin.get("email", "admin"), "shops", "Exported shops CSV")
+    await _emit_audit("EXPORT", admin.get("email", "admin"), "shops", "Exported shops CSV")
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="text/csv",
@@ -448,7 +476,7 @@ async def export_shops_json(
 
     filename = f"shops_selected_{len(items)}.json" if ids else "shops_export.json"
     payload = json.dumps({"exported_at": datetime.now(timezone.utc).isoformat(), "count": len(items), "shops": items}, indent=2)
-    _emit_audit("EXPORT", admin.get("email", "admin"), "shops", f"Exported {len(items)} shops as JSON{' (filtered)' if ids else ''}")
+    await _emit_audit("EXPORT", admin.get("email", "admin"), "shops", f"Exported {len(items)} shops as JSON{' (filtered)' if ids else ''}")
     return Response(
         content=payload,
         media_type="application/json",
@@ -530,7 +558,7 @@ async def import_shops(
             continue
 
     await db.commit()
-    _emit_audit("IMPORT", admin.get("email", "admin"), "shops", f"Imported {created} shops, skipped {skipped}, failed {len(failed)}")
+    await _emit_audit("IMPORT", admin.get("email", "admin"), "shops", f"Imported {created} shops, skipped {skipped}, failed {len(failed)}")
     return {"ok": True, "created": created, "skipped": skipped, "failed": failed}
 
 
@@ -550,7 +578,10 @@ async def export_tickets_csv(
         Ticket.status, Ticket.final_cost, Ticket.created_at
     )
     if shop_id:
-        q = q.where(Ticket.shop_id == shop_id)
+        try:
+            q = q.where(Ticket.shop_id == uuid.UUID(shop_id))
+        except (ValueError, AttributeError):
+            raise HTTPException(status_code=400, detail="Invalid shop_id format.")
 
     rows = await db.execute(q.order_by(Ticket.created_at.desc()))
 
@@ -562,7 +593,7 @@ async def export_tickets_csv(
                         str(r[5] or ""), str(r[6])])
 
     buf.seek(0)
-    _emit_audit("EXPORT", admin.get("email", "admin"), "tickets", "Exported tickets CSV")
+    await _emit_audit("EXPORT", admin.get("email", "admin"), "tickets", "Exported tickets CSV")
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="text/csv",
@@ -599,7 +630,12 @@ async def bulk_shop_action(
     updated = 0
     for sid in shop_ids:
         try:
-            result = await db.execute(select(Shop).where(Shop.id == sid))
+            # Fix #13: cast string IDs to uuid.UUID before querying UUID column
+            try:
+                shop_uuid = uuid.UUID(str(sid))
+            except (ValueError, AttributeError):
+                continue  # skip malformed IDs
+            result = await db.execute(select(Shop).where(Shop.id == shop_uuid))
             shop = result.scalar_one_or_none()
             if shop:
                 shop.shop_status = new_status
@@ -608,17 +644,10 @@ async def bulk_shop_action(
             pass
 
     await db.commit()
-    _emit_audit("BULK_ACTION", admin.get("email", "admin"),
+    await _emit_audit("BULK_ACTION", admin.get("email", "admin"),
                 f"{len(shop_ids)} shops", f"Action: {action} → {updated} updated")
     return {"ok": True, "updated": updated, "action": action, "new_status": new_status}
 
-
-# ─────────────────────────── Shop broadcasts (public) ───────────────────────────
-
-@router.get("/broadcasts/latest")
-async def get_latest_broadcasts() -> list[dict]:
-    """Return latest 10 broadcasts. Public endpoint — no admin auth required."""
-    return _BROADCASTS[:10]
 
 
 # ─────────────────────────── Shops ───────────────────────────
@@ -767,10 +796,11 @@ async def update_shop_admin(
         setattr(shop, field, value)
         changed_fields.append(field)
 
-    await db.commit()
+    # Fix #5: get_db() commits on exit; db.refresh() still needed to get updated state
+    await db.flush()
     await db.refresh(shop)
 
-    _emit_audit(
+    await _emit_audit(
         "UPDATE_SHOP", admin.get("email", "admin"), str(shop_id),
         f"Updated fields: {', '.join(changed_fields)}"
     )
@@ -823,7 +853,7 @@ async def create_shop(
         role="OWNER",
     )
     db.add(user)
-    await db.commit()
+    await db.flush()  # Fix #5: get_db() commits on exit; flush makes IDs available
     await db.refresh(shop)
 
     return {
@@ -864,15 +894,15 @@ async def delete_shop(
 
     sid = {"sid": shop_id}
     await safe_delete("DELETE FROM invoices WHERE shop_id = :sid", sid)
-    await safe_delete("DELETE FROM ticket_items WHERE ticket_id IN (SELECT id FROM tickets WHERE shop_id = :sid)", sid)
+    # Fix #3: ticket_items does not exist; ticket_parts is the correct table
     await safe_delete("DELETE FROM ticket_parts WHERE ticket_id IN (SELECT id FROM tickets WHERE shop_id = :sid)", sid)
     await safe_delete("DELETE FROM tickets WHERE shop_id = :sid", sid)
     await safe_delete("DELETE FROM inventory_items WHERE shop_id = :sid", sid)
     await safe_delete("DELETE FROM customers WHERE shop_id = :sid", sid)
     await safe_delete("DELETE FROM users WHERE shop_id = :sid", sid)
     await db.execute(text("DELETE FROM shops WHERE id = :sid"), sid)
-    await db.commit()
-    _emit_audit("DELETE", admin.get("email", "admin"), "shops", f"Deleted shop {shop_id}")
+    await db.commit()  # explicit commit — delete_shop uses a raw text session
+    await _emit_audit("DELETE", admin.get("email", "admin"), "shops", f"Deleted shop {shop_id}")
 
 
 # ─────────────────────────── Shop — Account Management ───────────────────────────
@@ -895,7 +925,7 @@ async def restrict_shop(
     shop = await _get_shop_or_404(shop_id, db)
     shop.shop_status = "RESTRICTED"
     shop.is_active = True  # still accessible, just read-only
-    await db.commit()
+    # Fix #5: get_db() commits on exit — no manual commit needed
     return {"id": str(shop.id), "shop_status": shop.shop_status}
 
 
@@ -909,7 +939,7 @@ async def block_shop(
     shop = await _get_shop_or_404(shop_id, db)
     shop.shop_status = "BLOCKED"
     shop.is_active = True  # keeps data but login is rejected
-    await db.commit()
+    # Fix #5: get_db() commits on exit — no manual commit needed
     return {"id": str(shop.id), "shop_status": shop.shop_status}
 
 
@@ -923,7 +953,7 @@ async def deactivate_shop(
     shop = await _get_shop_or_404(shop_id, db)
     shop.shop_status = "INACTIVE"
     shop.is_active = False
-    await db.commit()
+    # Fix #5: get_db() commits on exit
     return {"id": str(shop.id), "shop_status": shop.shop_status}
 
 
@@ -937,7 +967,7 @@ async def reactivate_shop(
     shop = await _get_shop_or_404(shop_id, db)
     shop.shop_status = "ACTIVE"
     shop.is_active = True
-    await db.commit()
+    # Fix #5: get_db() commits on exit
     return {"id": str(shop.id), "shop_status": shop.shop_status}
 
 
@@ -951,7 +981,7 @@ async def update_shop_note(
     """Set or clear the admin's internal note for a shop."""
     shop = await _get_shop_or_404(shop_id, db)
     shop.admin_note = (body.get("note") or "").strip() or None
-    await db.commit()
+    # Fix #5: get_db() commits on exit
     return {"id": str(shop.id), "admin_note": shop.admin_note}
 
 
@@ -974,8 +1004,12 @@ async def reset_shop_owner_password(
     target_user_id = body.get("user_id")
 
     if target_user_id:
+        try:
+            target_user_uuid = uuid.UUID(str(target_user_id))
+        except (ValueError, AttributeError):
+            raise HTTPException(status_code=422, detail="Invalid user_id format.")
         result = await db.execute(
-            select(User).where(User.id == target_user_id, User.shop_id == shop_id)
+            select(User).where(User.id == target_user_uuid, User.shop_id == shop_id)
         )
     else:
         # Reset the shop owner's password
@@ -988,7 +1022,7 @@ async def reset_shop_owner_password(
         raise HTTPException(status_code=404, detail="User not found in this shop.")
 
     user.password_hash = hash_password(new_password)
-    await db.commit()
+    # Fix #5: get_db() commits on exit — no manual commit needed
     return {"ok": True, "email": user.email, "message": f"Password reset for {user.email}"}
 
 
@@ -1261,7 +1295,7 @@ async def kill_shop_session(
     if deleted == 0:
         raise HTTPException(status_code=404, detail="Session not found or already expired.")
 
-    _emit_audit(
+    await _emit_audit(
         "KILL_SESSION",
         admin.get("email", "admin"),
         str(shop_id),

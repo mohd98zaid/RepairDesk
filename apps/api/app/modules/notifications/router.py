@@ -111,8 +111,17 @@ async def notification_stream(
     Accepts token as query parameter (EventSource API limitation).
     """
     current_user = await _get_sse_user(token)
+    # Fix #2: JWT payload returns shop_id as a string; cast to uuid.UUID for SQLAlchemy
+    try:
+        shop_uuid = uuid.UUID(current_user["shop_id"])
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid shop_id in token.")
     return StreamingResponse(
-        generate_notification_stream(current_user["shop_id"]),
+        generate_notification_stream(shop_uuid),
         media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive"
+        }
     )
 

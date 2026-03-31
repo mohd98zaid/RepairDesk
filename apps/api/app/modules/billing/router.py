@@ -28,7 +28,6 @@ from app.modules.admin.router import AdminUser, _get_admin_user
 
 router = APIRouter(prefix="/billing", tags=["Billing"])
 
-DbSession = AsyncSession
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -38,7 +37,7 @@ DbSession = AsyncSession
 @router.get("/admin/plans", response_model=list[PlanResponse])
 async def admin_list_plans(
     admin: dict = Depends(_get_admin_user),
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """List all plans with their features (admin only)."""
     plans = await service.list_plans(db, public_only=False)
@@ -49,7 +48,7 @@ async def admin_list_plans(
 async def admin_create_plan(
     data: PlanCreate,
     admin: dict = Depends(_get_admin_user),
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Create a new plan (admin only)."""
     plan = await service.create_plan(data.model_dump(), db)
@@ -61,7 +60,7 @@ async def admin_update_plan(
     plan_id: uuid.UUID,
     data: PlanUpdate,
     admin: dict = Depends(_get_admin_user),
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Update plan fields (admin only)."""
     plan = await service.update_plan(plan_id, data.model_dump(exclude_none=True), db)
@@ -74,7 +73,7 @@ async def admin_update_plan(
 async def admin_delete_plan(
     plan_id: uuid.UUID,
     admin: dict = Depends(_get_admin_user),
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Delete a plan (only if no active subscriptions)."""
     try:
@@ -88,7 +87,7 @@ async def admin_set_plan_feature(
     plan_id: uuid.UUID,
     data: SetPlanFeatureRequest,
     admin: dict = Depends(_get_admin_user),
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Set or update a feature value for a plan."""
     pf = await service.set_plan_feature(plan_id, data.feature_id, data.value, db)
@@ -100,7 +99,7 @@ async def admin_remove_plan_feature(
     plan_id: uuid.UUID,
     feature_id: uuid.UUID,
     admin: dict = Depends(_get_admin_user),
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Remove a feature from a plan."""
     await service.remove_plan_feature(plan_id, feature_id, db)
@@ -113,7 +112,7 @@ async def admin_remove_plan_feature(
 @router.get("/admin/features", response_model=list[FeatureResponse])
 async def admin_list_features(
     admin: dict = Depends(_get_admin_user),
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """List all feature definitions (admin only)."""
     return await service.list_features(db)
@@ -123,7 +122,7 @@ async def admin_list_features(
 async def admin_create_feature(
     data: FeatureCreate,
     admin: dict = Depends(_get_admin_user),
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Create a new feature definition (admin only)."""
     return await service.create_feature(data.model_dump(), db)
@@ -133,7 +132,7 @@ async def admin_create_feature(
 async def admin_delete_feature(
     feature_id: uuid.UUID,
     admin: dict = Depends(_get_admin_user),
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Delete a feature definition (removes from all plans first)."""
     try:
@@ -149,7 +148,7 @@ async def admin_delete_feature(
 @router.get("/admin/subscriptions/stats")
 async def admin_subscription_stats(
     admin: dict = Depends(_get_admin_user),
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get subscription analytics (MRR, plan distribution, etc)."""
     return await service.get_subscription_stats(db)
@@ -158,7 +157,7 @@ async def admin_subscription_stats(
 @router.get("/admin/subscriptions")
 async def admin_list_subscriptions(
     admin: dict = Depends(_get_admin_user),
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     status: str | None = Query(None),
@@ -216,7 +215,7 @@ async def admin_subscribe_shop(
     shop_id: uuid.UUID,
     data: SubscribeRequest,
     admin: dict = Depends(_get_admin_user),
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Manually subscribe a shop to a plan (admin only)."""
     try:
@@ -230,7 +229,7 @@ async def admin_subscribe_shop(
 async def admin_cancel_subscription(
     shop_id: uuid.UUID,
     admin: dict = Depends(_get_admin_user),
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Cancel a shop's active subscription (admin only)."""
     await service.cancel_subscription(shop_id, db)
@@ -243,7 +242,7 @@ async def admin_cancel_subscription(
 
 @router.get("/plans", response_model=list[PlanResponse])
 async def list_public_plans(
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """List public plans (available for self-service signup)."""
     plans = await service.list_plans(db, public_only=True)
@@ -253,7 +252,7 @@ async def list_public_plans(
 @router.get("/subscription", response_model=SubscriptionResponse)
 async def get_my_subscription(
     current_user: CurrentUser,
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get the current shop's subscription details."""
     sub = await service.get_shop_subscription(current_user["shop_id"], db)
@@ -284,7 +283,7 @@ async def get_my_subscription(
 @router.get("/features")
 async def get_my_features(
     current_user: CurrentUser,
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get all feature key→value pairs for the current shop."""
     features = await service.get_shop_features(current_user["shop_id"], db)
@@ -295,7 +294,7 @@ async def get_my_features(
 async def check_my_feature(
     feature_key: str,
     current_user: CurrentUser,
-    db: DbSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Check if the current shop has access to a specific feature."""
     value = await service.has_feature(current_user["shop_id"], feature_key, db)

@@ -21,7 +21,7 @@ type PageState = "idle" | "device_limit" | "otp_sent";
 
 export default function LoginPage() {
     const router = useRouter();
-    const setAuth = useAuthStore((s) => s.setAuth);
+    const setAuth = useAuthStore((s: any) => s.setAuth);
     const [showPassword, setShowPassword] = useState(false);
     const [serverError, setServerError] = useState<string | null>(null);
     const [pageState, setPageState] = useState<PageState>("idle");

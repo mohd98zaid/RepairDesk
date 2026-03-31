@@ -64,12 +64,3 @@ class InvalidTransitionException(RepairDeskException):
             detail=detail,
             code="INVALID_TRANSITION",
         )
-
-
-class RateLimitedException(RepairDeskException):
-    def __init__(self, detail: str = "Too many requests."):
-        super().__init__(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=detail,
-            code="RATE_LIMITED",
-        )

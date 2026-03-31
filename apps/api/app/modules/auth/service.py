@@ -69,7 +69,7 @@ async def register_shop(data: RegisterRequest, db: AsyncSession) -> dict:
     """
     redis = await get_redis()
     verified_email = await redis.get(f"verified:{data.verified_token}")
-    
+
     if not verified_email or verified_email != data.email:
         raise UnauthorizedException("Invalid or expired verification token. Please verify your email again.")
 
@@ -111,13 +111,13 @@ async def register_shop(data: RegisterRequest, db: AsyncSession) -> dict:
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
 
-    # Store refresh token in Redis
-    redis = await get_redis()
+    # Store refresh token and seed inactivity timer (single get_redis call)
     await redis.setex(
         f"refresh:{user.id}:{session_id}",
         60 * 60 * 24 * 7,  # 7 days in seconds
         refresh_token,
     )
+    await redis.setex(f"activity:{user.id}:{session_id}", 60 * 60 * 12, "1")
 
     return {
         "access_token": access_token,
@@ -460,6 +460,8 @@ async def force_logout_others_and_login(email: str, otp: str, password: str, db:
         60 * 60 * 24 * 7,
         refresh_token,
     )
+    # Seed inactivity timer — required so next /auth/refresh doesn't immediately expire
+    await redis.setex(f"activity:{user.id}:{session_id}", 60 * 60 * 12, "1")
 
     return {
         "access_token": access_token,

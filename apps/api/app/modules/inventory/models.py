@@ -1,9 +1,5 @@
 import uuid
 from datetime import datetime
-
-
-def _gen_product_short_id() -> str:
-    return "PRD-" + str(uuid.uuid4()).replace("-", "")[:6].upper()
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -13,6 +9,10 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
+
+
+def _gen_product_short_id() -> str:
+    return "PRD-" + str(uuid.uuid4()).replace("-", "")[:6].upper()
 
 
 class InventoryItem(Base):

@@ -46,7 +46,9 @@ class LoginRequest(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
-    refresh_token: str = ""
+    # Fix #6: refresh_token is never returned in the body (httpOnly cookie only).
+    # Field kept for backward-compat clients but will always be None/empty.
+    refresh_token: str | None = None
     token_type: str = "bearer"
     user: "AuthUserPayload"
 

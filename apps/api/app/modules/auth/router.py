@@ -3,7 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.db import get_db
-from app.core.dependencies import CurrentUser, DbSession, get_refresh_token
+from app.core.dependencies import CurrentUser, DbSession
+from app.core.exceptions import UnauthorizedException
 from app.modules.auth import service
 from app.modules.auth.schemas import (
     LoginRequest,
@@ -56,7 +57,7 @@ async def register(
     """Register a new shop and owner account. Returns JWT access token."""
     result = await service.register_shop(data, db)
 
-    # Set httpOnly refresh cookie
+    # Fix #6: Refresh token travels ONLY via httpOnly cookie — never in JSON body
     response.set_cookie(
         key=REFRESH_COOKIE_NAME,
         value=result["refresh_token"],
@@ -77,7 +78,7 @@ async def register(
 
     return TokenResponse(
         access_token=result["access_token"],
-        refresh_token=result["refresh_token"],
+        refresh_token=None,  # Fix #6: never expose in body
         user=user_payload,
     )
 
@@ -93,6 +94,7 @@ async def login(
     """Authenticate with email + password. Returns JWT access token."""
     result = await service.login_user(data, db)
 
+    # Fix #6: Refresh token travels ONLY via httpOnly cookie — never in JSON body
     response.set_cookie(
         key=REFRESH_COOKIE_NAME,
         value=result["refresh_token"],
@@ -113,7 +115,7 @@ async def login(
 
     return TokenResponse(
         access_token=result["access_token"],
-        refresh_token=result["refresh_token"],
+        refresh_token=None,  # Fix #6: never expose in body
         user=user_payload,
     )
 
@@ -125,21 +127,14 @@ async def refresh(
     repairdesk_refresh: str | None = Cookie(default=None),
 ):
     """Exchange a valid refresh token for a new access token.
-    
-    Accepts refresh token from httpOnly cookie OR request body (fallback for cross-origin).
+
+    Fix #6: Refresh token is accepted ONLY from the httpOnly cookie.
+    The body-fallback is removed to prevent XSS token theft.
     """
-    token = repairdesk_refresh
-    if not token:
-        try:
-            body = await request.json()
-            token = body.get("refresh_token")
-        except Exception:
-            pass
-    
-    if not token:
+    if not repairdesk_refresh:
         raise UnauthorizedException("Refresh token not found.")
-    
-    access_token = await service.refresh_access_token(token, db)
+
+    access_token = await service.refresh_access_token(repairdesk_refresh, db)
     return RefreshResponse(access_token=access_token)
 
 
@@ -187,6 +182,7 @@ async def force_logout_login(
     """Verify OTP, evict all other sessions, and issue a fresh session."""
     result = await service.force_logout_others_and_login(data.email, data.otp, data.password, db)
 
+    # Fix #6: Refresh token travels ONLY via httpOnly cookie
     response.set_cookie(
         key=REFRESH_COOKIE_NAME,
         value=result["refresh_token"],
@@ -207,6 +203,6 @@ async def force_logout_login(
 
     return TokenResponse(
         access_token=result["access_token"],
-        refresh_token=result["refresh_token"],
+        refresh_token=None,  # Fix #6: never expose in body
         user=user_payload,
     )

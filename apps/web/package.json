@@ -19,7 +19,7 @@
     "@stripe/stripe-js": "^8.8.0",
     "@types/react-signature-canvas": "^1.0.7",
     "@yudiel/react-qr-scanner": "^2.5.1",
-    "axios": "^1.13.5",
+    "axios": "^1.14.0",
     "browser-image-compression": "^2.0.2",
     "clsx": "^2.1.1",
     "dexie": "^4.3.0",
@@ -28,13 +28,13 @@
     "next": "^16.2.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-hook-form": "^7.71.2",
+    "react-hook-form": "^7.72.0",
     "react-signature-canvas": "^1.1.0-alpha.2",
     "stripe": "^20.3.1",
     "tailwind-merge": "^3.5.0",
     "yup": "^1.7.1",
     "zod": "^4.3.6",
-    "zustand": "^5.0.11"
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
