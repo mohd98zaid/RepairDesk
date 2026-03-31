@@ -128,9 +128,15 @@ def create_app() -> FastAPI:
         import logging
         logger = logging.getLogger("repairdesk.error")
         logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True)
+        headers = {}
+        origin = request.headers.get("origin", "")
+        if origin and origin in settings.cors_origins:
+            headers["Access-Control-Allow-Origin"] = origin
+            headers["Access-Control-Allow-Credentials"] = "true"
         return JSONResponse(
             status_code=500,
             content={"detail": "Internal server error"},
+            headers=headers,
         )
 
     # Register routers
