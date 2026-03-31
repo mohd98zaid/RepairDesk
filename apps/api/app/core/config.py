@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # App
     app_url: str = "http://localhost:3000"
     environment: str = "development"
-    cors_origins: str | list[str] = ["http://localhost:3000"]
+    cors_origins: str | list[str] = ["http://localhost:3000", "https://repairdeskz.vercel.app"]
     
     # Twilio
     twilio_account_sid: str = ""
