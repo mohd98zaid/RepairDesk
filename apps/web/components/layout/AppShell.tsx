@@ -717,7 +717,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <aside className="hidden md:flex flex-col w-64 border-r border-border bg-card p-4 gap-2 h-screen overflow-y-auto sticky top-0">
                 {/* Logo + Bell */}
                 <div className="flex items-center gap-2.5 mb-4 px-1">
-                    <img src="/logo.png" alt="RepairDeskz" className="w-[140px] xl:w-[160px] h-auto object-contain bg-white rounded-lg p-2 flex-shrink-0" />
+                    <div className="bg-white rounded-lg w-[140px] xl:w-[160px] h-10 xl:h-12 flex items-center justify-center overflow-hidden flex-shrink-0 px-2 py-1">
+                        <img src="/logo.png" alt="RepairDeskz" className="w-full h-auto object-contain scale-[1.15]" />
+                    </div>
                     <span className="flex-1"></span>
                     <OfflineSyncManager />
                     <NotificationsBell dropdownClassName="fixed top-16 left-64 w-80 max-h-[80vh] shadow-[0_10px_40px_rgba(0,0,0,0.5)]" />
@@ -728,7 +730,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             {/* Mobile top bar */}
             <div className="md:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-3 bg-card/90 backdrop-blur-md border-b border-border">
                 <div className="flex items-center gap-2">
-                    <img src="/logo.png" alt="RepairDeskz" className="w-[120px] h-auto object-contain bg-white rounded p-1.5 shadow-sm" />
+                    <div className="bg-white rounded w-[120px] h-8 flex items-center justify-center overflow-hidden shadow-sm px-1.5 py-0.5">
+                        <img src="/logo.png" alt="RepairDeskz" className="w-full h-auto object-contain scale-[1.15]" />
+                    </div>
                 </div>
                 <div className="flex items-center gap-1">
                     <OfflineSyncManager />
