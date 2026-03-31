@@ -297,33 +297,46 @@ def create_app() -> FastAPI:
         from sqlalchemy import text
         import traceback
 
+        results = []
         try:
             async with AsyncSessionLocal() as session:
-                # Add ticket ratings and warranty
-                await session.execute(text("""
-                    ALTER TABLE tickets
-                    ADD COLUMN IF NOT EXISTS customer_rating INTEGER,
-                    ADD COLUMN IF NOT EXISTS customer_feedback TEXT,
-                    ADD COLUMN IF NOT EXISTS warranty_days INTEGER;
-                """))
+                # Add ticket ratings and warranty (only if tickets table exists)
+                try:
+                    await session.execute(text("""
+                        ALTER TABLE tickets
+                        ADD COLUMN IF NOT EXISTS customer_rating INTEGER,
+                        ADD COLUMN IF NOT EXISTS customer_feedback TEXT,
+                        ADD COLUMN IF NOT EXISTS warranty_days INTEGER;
+                    """))
+                    results.append("tickets: patched")
+                except Exception as e:
+                    results.append(f"tickets: skipped ({type(e).__name__})")
                 
                 # Add short IDs
-                await session.execute(text("""
-                    ALTER TABLE shops ADD COLUMN IF NOT EXISTS short_id VARCHAR(12);
-                    ALTER TABLE customers ADD COLUMN IF NOT EXISTS short_id VARCHAR(10);
-                    ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS short_id VARCHAR(10);
-                """))
+                try:
+                    await session.execute(text("""
+                        ALTER TABLE shops ADD COLUMN IF NOT EXISTS short_id VARCHAR(12);
+                        ALTER TABLE customers ADD COLUMN IF NOT EXISTS short_id VARCHAR(10);
+                        ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS short_id VARCHAR(10);
+                    """))
+                    results.append("short_ids: patched")
+                except Exception as e:
+                    results.append(f"short_ids: skipped ({type(e).__name__})")
                 
                 # Add shop_status and admin_note (missing from production)
-                await session.execute(text("""
-                    ALTER TABLE shops ADD COLUMN IF NOT EXISTS shop_status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE';
-                    ALTER TABLE shops ADD COLUMN IF NOT EXISTS admin_note TEXT;
-                """))
+                try:
+                    await session.execute(text("""
+                        ALTER TABLE shops ADD COLUMN IF NOT EXISTS shop_status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE';
+                        ALTER TABLE shops ADD COLUMN IF NOT EXISTS admin_note TEXT;
+                    """))
+                    results.append("shop_status+admin_note: patched")
+                except Exception as e:
+                    results.append(f"shop_status+admin_note: skipped ({type(e).__name__})")
                 
                 await session.commit()
-            return {"status": "ok", "message": "Successfully applied raw DB schema patches for missing columns."}
+            return {"status": "ok", "results": results}
         except Exception as e:
-            return {"status": "error", "message": str(e), "traceback": traceback.format_exc()}
+            return {"status": "error", "message": str(e), "traceback": traceback.format_exc(), "results": results}
 
     return app
 
