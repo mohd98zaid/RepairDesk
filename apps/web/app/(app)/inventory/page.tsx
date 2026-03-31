@@ -66,8 +66,13 @@ function ItemModal({
             }
             onSave();
         } catch (e: unknown) {
-            const err = e as { response?: { data?: { detail?: string } } };
-            setError(err.response?.data?.detail || "Failed to save item.");
+            const err = e as { response?: { data?: { detail?: string | Array<{ msg: string }> } } };
+            const detail = err.response?.data?.detail;
+            if (Array.isArray(detail)) {
+                setError(detail[0]?.msg || "Validation error");
+            } else {
+                setError(detail || "Failed to save item.");
+            }
         } finally {
             setLoading(false);
         }
@@ -124,7 +129,7 @@ function ItemModal({
                                 onChange={(e) =>
                                     setForm((f) => ({
                                         ...f,
-                                        [key]: type === "number" ? Number(e.target.value) : e.target.value,
+                                        [key]: ["quantity", "low_stock_threshold"].includes(key) ? Number(e.target.value) : e.target.value,
                                     }))
                                 }
                                 placeholder={placeholder}
