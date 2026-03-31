@@ -11,6 +11,9 @@ from app.core.exceptions import ForbiddenException, UnauthorizedException
 from app.core.security import decode_token
 from app.modules.shops.models import Shop
 
+# Inactivity timeout: force logout after this many seconds of no API activity
+_INACTIVITY_TIMEOUT_SECONDS = 12 * 60 * 60  # 12 hours
+
 
 async def get_current_user(
     request: Request,
@@ -73,6 +76,9 @@ async def get_current_user(
                 "Please contact support to restore full access."
             )
 
+    # Refresh the inactivity timer — if silent for 12h, refresh will be denied
+    await _touch_activity(user_id, session_id)
+
     return {
         "user_id": user_id_uuid,
         "shop_id": shop_id_uuid,
@@ -80,6 +86,26 @@ async def get_current_user(
         "shop_status": shop_status,
         "session_id": session_id,
     }
+
+
+async def _touch_activity(user_id: str, session_id: str | None) -> None:
+    """
+    Refresh the inactivity timer for this session in Redis.
+    Called on every successfully authenticated request.
+    If the key expires (no activity for 12h), the next refresh attempt will fail.
+    """
+    if not session_id:
+        return
+    try:
+        from app.core.redis import get_redis
+        redis = await get_redis()
+        await redis.setex(
+            f"activity:{user_id}:{session_id}",
+            _INACTIVITY_TIMEOUT_SECONDS,
+            "1",
+        )
+    except Exception:
+        pass  # Never block a request due to Redis hiccup
 
 
 async def require_owner(

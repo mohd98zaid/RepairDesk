@@ -226,6 +226,9 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
         refresh_token,
     )
 
+    # Seed activity key so the 12-hour inactivity clock starts from login
+    await redis.setex(f"activity:{user.id}:{session_id}", 60 * 60 * 12, "1")
+
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
@@ -259,6 +262,18 @@ async def refresh_access_token(refresh_token: str, db: AsyncSession) -> str:
 
     if not stored_token or stored_token != refresh_token:
         raise UnauthorizedException("Refresh token has been revoked.")
+
+    # ─── Inactivity check ───────────────────────────────────────
+    # If the user hasn't made any API call in the last 12 hours, the
+    # activity key will have expired. Force them to log in again.
+    activity_key = f"activity:{user_id}:{session_id}"
+    activity_exists = await redis.exists(activity_key)
+    if not activity_exists:
+        # Revoke the refresh token too — clean up the session
+        await redis.delete(f"refresh:{user_id}:{session_id}")
+        raise UnauthorizedException(
+            "Your session has expired due to inactivity. Please log in again."
+        )
 
     # Verify user still exists and is active
     result = await db.execute(select(User).where(User.id == user_id, User.is_active == True))
