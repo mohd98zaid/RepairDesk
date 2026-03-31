@@ -171,7 +171,7 @@ export default function LoginPage() {
 
             <div className="relative w-full max-w-md">
                 <div className="flex items-center gap-3 mb-8 justify-center">
-                    <img src="/logo.png" alt="RepairDeskz" className="h-16 w-auto object-contain bg-white rounded-xl p-1.5 shadow-lg" />
+                    <img src="/logo.png" alt="RepairDeskz" className="h-16 w-[220px] object-contain bg-white rounded-xl px-4 py-2 shadow-lg" />
                 </div>
 
                 <div className="glass rounded-2xl p-5 sm:p-8 shadow-2xl">
