@@ -384,16 +384,24 @@ def create_app() -> FastAPI:
                             short_id VARCHAR(10) NOT NULL DEFAULT ('CUS-' || UPPER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 6))),
                             shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
                             name VARCHAR(255) NOT NULL,
-                            phone VARCHAR(30),
+                            phone VARCHAR(30) NOT NULL,
                             email VARCHAR(255),
-                            address TEXT,
+                            notes TEXT,
+                            is_deleted BOOLEAN NOT NULL DEFAULT false,
                             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                            UNIQUE(shop_id, phone)
                         );
                     """))
                     await session.execute(text("CREATE INDEX IF NOT EXISTS idx_customers_shop_id ON customers(shop_id)"))
                     await session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_short_id ON customers(short_id)"))
-                    results.append("customers: created/exists")
+
+                    # Patch existing customers table with missing columns
+                    await session.execute(text("ALTER TABLE customers ADD COLUMN IF NOT EXISTS notes TEXT"))
+                    await session.execute(text("ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT false"))
+                    await session.execute(text("ALTER TABLE customers ALTER COLUMN phone TYPE VARCHAR(30)"))
+
+                    results.append("customers: created/exists + patched")
                 except Exception as e:
                     results.append(f"customers: error ({type(e).__name__})")
 
@@ -402,42 +410,41 @@ def create_app() -> FastAPI:
                     await session.execute(text("""
                         DO $$ BEGIN
                             IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ticket_status') THEN
-                                CREATE TYPE ticket_status AS ENUM ('RECEIVED', 'DIAGNOSING', 'WAITING_PARTS', 'IN_PROGRESS', 'READY', 'DELIVERED', 'CANCELLED');
-                            END IF;
-                            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ticket_priority') THEN
-                                CREATE TYPE ticket_priority AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'URGENT');
+                                CREATE TYPE ticket_status AS ENUM ('RECEIVED', 'IN_PROGRESS', 'WAITING_PARTS', 'READY', 'DELIVERED', 'CANCELLED');
                             END IF;
                         END $$;
                     """))
                     await session.execute(text("""
                         CREATE TABLE IF NOT EXISTS tickets (
                             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            short_id VARCHAR(12) NOT NULL DEFAULT ('TKT-' || UPPER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 6))),
                             shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
-                            device_type VARCHAR(100),
-                            brand VARCHAR(100),
-                            model VARCHAR(100),
-                            serial_number VARCHAR(100),
-                            password VARCHAR(100),
-                            problem_description TEXT,
-                            diagnosis TEXT,
+                            customer_id UUID NOT NULL REFERENCES customers(id),
+                            assigned_to UUID REFERENCES users(id),
+                            ticket_number INTEGER NOT NULL,
+                            device_type VARCHAR(100) NOT NULL,
+                            device_model VARCHAR(150),
+                            reported_issue TEXT NOT NULL,
+                            technician_notes TEXT,
                             status ticket_status NOT NULL DEFAULT 'RECEIVED',
-                            priority ticket_priority NOT NULL DEFAULT 'MEDIUM',
                             estimated_cost DECIMAL(10,2),
                             final_cost DECIMAL(10,2),
-                            advance_paid DECIMAL(10,2) DEFAULT 0,
-                            expected_pickup_date DATE,
-                            assigned_to UUID REFERENCES users(id),
+                            parts_cost DECIMAL(10,2) NOT NULL DEFAULT 0,
+                            profit DECIMAL(10,2),
+                            warranty_days INTEGER,
+                            pre_repair_checklist JSONB,
+                            customer_signature TEXT,
                             customer_rating INTEGER,
                             customer_feedback TEXT,
-                            warranty_days INTEGER,
+                            is_deleted BOOLEAN NOT NULL DEFAULT false,
+                            created_by UUID NOT NULL REFERENCES users(id),
                             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                            UNIQUE(shop_id, ticket_number)
                         );
                     """))
                     await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_shop_id ON tickets(shop_id)"))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(shop_id, status)"))
+                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_customer_id ON tickets(customer_id)"))
+                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_created_at ON tickets(created_at)"))
                     results.append("tickets: created/exists")
                 except Exception as e:
                     results.append(f"tickets: error ({type(e).__name__})")
