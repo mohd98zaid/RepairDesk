@@ -53,11 +53,20 @@ async def lifespan(app: FastAPI):
 
     # Automatically apply Alembic migrations on startup in production (for Hobby tiers without shell access)
     if settings.is_production:
+        import subprocess
         import os
         import logging
         logger = logging.getLogger("repairdesk.startup")
-        logger.info("Running Alembic migrations automatically on startup...")
-        os.system("alembic upgrade head")
+        alembic_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        logger.info(f"Running Alembic migrations automatically on startup from {alembic_dir}...")
+        try:
+            result = subprocess.run(["alembic", "upgrade", "head"], cwd=alembic_dir, capture_output=True, text=True)
+            if result.returncode != 0:
+                logger.error(f"Alembic migration failed: {result.stderr}")
+            else:
+                logger.info(f"Alembic migration output: {result.stdout}")
+        except Exception as e:
+            logger.error(f"Failed to run alembic: {e}")
 
     # Validate secrets
     import logging
