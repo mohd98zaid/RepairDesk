@@ -44,18 +44,18 @@ function KPICard({
     href?: string;
 }) {
     const inner = (
-        <div className="bg-card rounded-xl p-5 flex items-start gap-4 transition border border-border shadow-sm hover:shadow-md hover:border-primary/40">
-            <div className={`p-3 rounded-xl ${color}`}>
-                <Icon className={`w-5 h-5 ${color.includes('bg-') && !color.includes('bg-muted') ? 'text-white' : 'text-foreground'}`} />
+        <div className="bg-card h-full w-full rounded-xl p-3.5 sm:p-5 flex flex-col sm:flex-row items-start gap-2.5 sm:gap-4 transition border border-border shadow-sm hover:shadow-md hover:border-primary/40">
+            <div className={`p-2.5 sm:p-3 rounded-xl ${color}`}>
+                <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${color.includes('bg-') && !color.includes('bg-muted') ? 'text-white' : 'text-foreground'}`} />
             </div>
-            <div>
-                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">{label}</p>
-                <p className="text-2xl font-bold text-foreground mt-0.5">{value}</p>
-                {sub && <p className="text-muted-foreground text-xs mt-0.5">{sub}</p>}
+            <div className="min-w-0 flex-1">
+                <p className="text-muted-foreground text-[10px] sm:text-xs font-medium uppercase tracking-wide truncate">{label}</p>
+                <p className="text-lg sm:text-2xl font-bold text-foreground mt-0.5 truncate">{value}</p>
+                {sub && <p className="text-muted-foreground text-[10px] sm:text-xs mt-0.5 truncate">{sub}</p>}
             </div>
         </div>
     );
-    return href ? <Link href={href}>{inner}</Link> : inner;
+    return href ? <Link href={href} className="block h-full">{inner}</Link> : <div className="block h-full">{inner}</div>;
 }
 
 export default function DashboardPage() {
@@ -173,13 +173,13 @@ export default function DashboardPage() {
 
             {/* KPI Cards */}
             {loading ? (
-                <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-4">
+                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 mb-4">
                     {Array.from({ length: 6 }).map((_, i) => (
-                        <div key={i} className="bg-muted rounded-xl p-5 h-24 animate-pulse" />
+                        <div key={i} className="bg-muted rounded-xl p-5 h-28 sm:h-24 animate-pulse" />
                     ))}
                 </div>
             ) : (
-                <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-4">
+                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 mb-4">
                     <KPICard icon={Clock} label="Open Tickets" value={kpi?.open ?? 0}
                         sub="Active repairs" color="bg-indigo-600" href="/tickets" />
                     <KPICard icon={CheckCircle} label="Ready for Pickup" value={kpi?.ready ?? 0}

@@ -138,7 +138,7 @@ export default function TicketsPage() {
             </div>
 
             {/* Ticket list */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
                 {loading ? (
                     Array.from({ length: 5 }).map((_, i) => <TicketSkeleton key={i} />)
                 ) : tickets.length === 0 ? (
@@ -157,52 +157,47 @@ export default function TicketsPage() {
                         <Link
                             key={ticket.id}
                             href={`/tickets/${ticket.id}`}
-                            className="bg-card border border-border shadow-sm rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-4 hover:border-primary/40 hover:shadow-md transition relative group"
+                            className="bg-card border border-border shadow-sm rounded-xl p-3 sm:p-4 flex flex-col hover:border-primary/40 hover:shadow-md transition relative group"
                         >
-                            <div className="flex justify-between items-start w-full sm:w-auto">
+                            <div className="flex flex-col xl:flex-row xl:justify-between items-start gap-1.5 w-full">
                                 {/* Ticket # */}
-                                <span className="text-primary text-sm font-bold font-mono px-2 py-1 bg-primary/10 rounded-md">
+                                <span className="text-primary text-xs sm:text-sm font-bold font-mono px-1.5 py-0.5 sm:px-2 sm:py-1 bg-primary/10 rounded-md shrink-0">
                                     {fmtTicketId(ticket.ticket_number)}
                                 </span>
-                                {/* Mobile Status Badge (shows on top right only on tiny screens) */}
-                                <div className="sm:hidden">
+                                {/* Mobile Status Badge (now shows inline in the grid) */}
+                                <div className="transform scale-90 origin-left xl:origin-right shrink-0">
                                     <StatusBadge status={ticket.status} />
                                 </div>
                             </div>
 
                             {/* Info */}
-                            <div className="flex-1 min-w-0">
-                                <p className="text-foreground font-semibold text-sm truncate">
+                            <div className="flex-1 min-w-0 mt-2">
+                                <p className="text-foreground font-semibold text-xs sm:text-sm truncate">
                                     {ticket.device_type}
                                     {ticket.device_model && (
                                         <span className="text-muted-foreground font-normal"> · {ticket.device_model}</span>
                                     )}
                                 </p>
-                                <p className="text-muted-foreground opacity-80 text-xs truncate mt-1 sm:mt-0.5 max-w-[90%]">{ticket.reported_issue}</p>
+                                <p className="text-muted-foreground opacity-80 text-[10px] sm:text-xs truncate mt-0.5 w-full">{ticket.reported_issue}</p>
                             </div>
 
-                            {/* Desktop/Tablet End Container */}
-                            <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto mt-2 sm:mt-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-border">
+                            {/* Bottom Container */}
+                            <div className="flex items-end justify-between w-full mt-3 pt-2 border-t border-border">
                                 {/* Cost */}
-                                <div className="text-left sm:text-right flex-shrink-0">
+                                <div className="text-left flex-shrink-0">
                                     {ticket.final_cost ? (
                                         <div>
-                                            <p className="text-success font-bold text-sm">₹{ticket.final_cost}</p>
-                                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground sm:hidden">Final</p>
+                                            <p className="text-success font-bold text-xs sm:text-sm">₹{ticket.final_cost}</p>
+                                            <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Final</p>
                                         </div>
                                     ) : ticket.estimated_cost ? (
                                         <div>
-                                            <p className="text-foreground font-medium text-sm">~₹{ticket.estimated_cost}</p>
-                                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground sm:hidden">Est.</p>
+                                            <p className="text-foreground font-medium text-xs sm:text-sm">~₹{ticket.estimated_cost}</p>
+                                            <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Est.</p>
                                         </div>
                                     ) : (
-                                        <p className="text-muted-foreground opacity-50 text-sm">—</p>
+                                        <p className="text-muted-foreground opacity-50 text-xs sm:text-sm">—</p>
                                     )}
-                                </div>
-
-                                {/* Desktop Status Badge */}
-                                <div className="hidden sm:block">
-                                    <StatusBadge status={ticket.status} />
                                 </div>
                             </div>
                         </Link>
