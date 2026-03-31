@@ -58,6 +58,29 @@ async def _get_admin_user(token: str = Depends(_oauth2_scheme)) -> dict:
 AdminUser = Depends(_get_admin_user)
 
 
+# ─────────────────────────── Migrations (TEMPORARY) ───────────────────────────
+
+@router.get("/run-migrations")
+async def run_migrations_endpoint():
+    """Run alembic upgrade head and return the output."""
+    import subprocess
+    import sys
+    import os
+    try:
+        alembic_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        executable = sys.executable
+        result = subprocess.run([executable, "-m", "alembic", "upgrade", "head"], cwd=alembic_dir, capture_output=True, text=True)
+        return {
+            "cwd": alembic_dir,
+            "executable": executable,
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ─────────────────────────── Login ───────────────────────────
 
 @router.post("/auth/login")
