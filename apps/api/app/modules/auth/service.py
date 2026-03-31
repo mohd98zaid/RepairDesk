@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictException, UnauthorizedException, ForbiddenException
@@ -140,18 +140,19 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
     # Check shop account status
     shop = None
     try:
-        shop_result = await db.execute(select(Shop).where(Shop.id == user.shop_id))
-        shop = shop_result.scalar_one_or_none()
-        if shop:
-            shop_status = getattr(shop, "shop_status", "ACTIVE")
-            if shop_status == "BLOCKED":
-                raise UnauthorizedException(
-                    "Your shop account has been blocked. Please contact support."
-                )
-            if shop_status == "INACTIVE":
-                raise UnauthorizedException(
-                    "Your shop account has been deactivated. Please contact support."
-                )
+        async with db.begin_nested():
+            shop_result = await db.execute(select(Shop).where(Shop.id == user.shop_id))
+            shop = shop_result.scalar_one_or_none()
+            if shop:
+                shop_status = getattr(shop, "shop_status", "ACTIVE")
+                if shop_status == "BLOCKED":
+                    raise UnauthorizedException(
+                        "Your shop account has been blocked. Please contact support."
+                    )
+                if shop_status == "INACTIVE":
+                    raise UnauthorizedException(
+                        "Your shop account has been deactivated. Please contact support."
+                    )
     except UnauthorizedException:
         raise
     except Exception:
@@ -159,7 +160,12 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
 
     # Update last_login_at (defensively — column may not exist on old DBs)
     try:
-        user.last_login_at = datetime.now(timezone.utc)
+        async with db.begin_nested():
+            await db.execute(
+                update(User)
+                .where(User.id == user.id)
+                .values(last_login_at=datetime.now(timezone.utc))
+            )
     except Exception:
         pass
 
@@ -431,17 +437,32 @@ async def force_logout_others_and_login(email: str, otp: str, password: str, db:
             break
 
     # Check shop status
-    shop_result = await db.execute(select(Shop).where(Shop.id == user.shop_id))
-    shop = shop_result.scalar_one_or_none()
-    if shop:
-        shop_status = getattr(shop, "shop_status", "ACTIVE")
-        if shop_status == "BLOCKED":
-            raise UnauthorizedException("Your shop account has been blocked. Please contact support.")
-        if shop_status == "INACTIVE":
-            raise UnauthorizedException("Your shop account has been deactivated. Please contact support.")
+    shop = None
+    try:
+        async with db.begin_nested():
+            shop_result = await db.execute(select(Shop).where(Shop.id == user.shop_id))
+            shop = shop_result.scalar_one_or_none()
+            if shop:
+                shop_status = getattr(shop, "shop_status", "ACTIVE")
+                if shop_status == "BLOCKED":
+                    raise UnauthorizedException("Your shop account has been blocked. Please contact support.")
+                if shop_status == "INACTIVE":
+                    raise UnauthorizedException("Your shop account has been deactivated. Please contact support.")
+    except UnauthorizedException:
+        raise
+    except Exception:
+        pass
 
     # Update last_login_at
-    user.last_login_at = datetime.now(timezone.utc)
+    try:
+        async with db.begin_nested():
+            await db.execute(
+                update(User)
+                .where(User.id == user.id)
+                .values(last_login_at=datetime.now(timezone.utc))
+            )
+    except Exception:
+        pass
 
     # Issue a fresh session
     session_id = str(uuid.uuid4())

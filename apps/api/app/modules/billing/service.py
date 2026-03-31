@@ -38,29 +38,30 @@ async def has_feature(shop_id: uuid.UUID, feature_key: str, db: AsyncSession) ->
         if val.isdigit() → numeric limit
     """
     try:
-        # Get active subscription with plan features
-        sub_result = await db.execute(
-            select(Subscription)
-            .options(selectinload(Subscription.plan).selectinload(Plan.features).selectinload(PlanFeature.feature))
-            .where(
-                Subscription.shop_id == shop_id,
-                Subscription.status == "active",
-                Subscription.current_period_end > datetime.now(timezone.utc),
+        async with db.begin_nested():
+            # Get active subscription with plan features
+            sub_result = await db.execute(
+                select(Subscription)
+                .options(selectinload(Subscription.plan).selectinload(Plan.features).selectinload(PlanFeature.feature))
+                .where(
+                    Subscription.shop_id == shop_id,
+                    Subscription.status == "active",
+                    Subscription.current_period_end > datetime.now(timezone.utc),
+                )
             )
-        )
-        subscription = sub_result.scalar_one_or_none()
+            subscription = sub_result.scalar_one_or_none()
 
-        if not subscription:
-            # No active subscription — check if there's a free/default plan
+            if not subscription:
+                # No active subscription — check if there's a free/default plan
+                return await _get_default_feature_value(feature_key, db)
+
+            # Look up feature in plan
+            for pf in subscription.plan.features:
+                if pf.feature.key == feature_key and pf.feature.is_active:
+                    return pf.value
+
+            # Feature not in plan — check default
             return await _get_default_feature_value(feature_key, db)
-
-        # Look up feature in plan
-        for pf in subscription.plan.features:
-            if pf.feature.key == feature_key and pf.feature.is_active:
-                return pf.value
-
-        # Feature not in plan — check default
-        return await _get_default_feature_value(feature_key, db)
     except Exception:
         # Billing tables may not exist yet on this deployment.
         # Return None so callers treat it as "no restriction".
