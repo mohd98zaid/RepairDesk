@@ -52,7 +52,6 @@ async def create_ticket(
 ) -> Ticket:
     # Resolve customer
     if data.customer_id:
-        from sqlalchemy import select
         from app.modules.customers.models import Customer
         result = await db.execute(
             select(Customer).where(Customer.id == data.customer_id, Customer.shop_id == shop_id)
