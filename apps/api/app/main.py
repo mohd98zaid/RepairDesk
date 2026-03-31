@@ -292,388 +292,380 @@ def create_app() -> FastAPI:
     # Temporary Migration Endpoint to create ALL tables on production DB
     @app.get(f"{prefix}/debug/migrate", tags=["Health"])
     async def apply_migrations():
-        """Create all tables and columns needed for production. Idempotent — safe to run multiple times."""
+        """Create all tables matching the SQLAlchemy models exactly. Idempotent."""
         from app.core.db import AsyncSessionLocal
         from sqlalchemy import text
-        import traceback
 
         results = []
         try:
             async with AsyncSessionLocal() as session:
-                # 1. Shops table
-                try:
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS shops (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            short_id VARCHAR(12) NOT NULL DEFAULT ('SHOP-' || UPPER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 6))),
-                            name VARCHAR(255) NOT NULL,
-                            phone VARCHAR(30),
-                            email VARCHAR(255),
-                            logo_key TEXT,
-                            address TEXT,
-                            pincode VARCHAR(10),
-                            gst_number VARCHAR(20),
-                            logo_data TEXT,
-                            plan VARCHAR(20) NOT NULL DEFAULT 'free',
-                            plan_expires_at TIMESTAMPTZ,
-                            is_active BOOLEAN NOT NULL DEFAULT true,
-                            shop_status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
-                            admin_note TEXT,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    results.append("shops: created/exists")
-                except Exception as e:
-                    results.append(f"shops: error ({type(e).__name__})")
+                # Drop old broken tables (in reverse dependency order)
+                for tbl in ["purchase_order_items", "purchase_orders", "vendors", "ticket_parts",
+                            "ticket_images", "ticket_charges", "ticket_status_logs", "tickets",
+                            "invoices", "inventory_items", "subscriptions", "plan_features",
+                            "features", "plans", "customers", "invitations", "users", "shops"]:
+                    await session.execute(text(f"DROP TABLE IF EXISTS {tbl} CASCADE"))
+                results.append("dropped all old tables")
+                # ── Enums ──
+                await session.execute(text("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN CREATE TYPE user_role AS ENUM ('OWNER', 'TECHNICIAN'); END IF; END $$;"))
+                await session.execute(text("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ticket_status') THEN CREATE TYPE ticket_status AS ENUM ('RECEIVED', 'IN_PROGRESS', 'WAITING_PARTS', 'READY', 'DELIVERED', 'CANCELLED'); END IF; END $$;"))
 
-                # 2. Users table
-                try:
-                    await session.execute(text("""
-                        DO $$ BEGIN
-                            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
-                                CREATE TYPE user_role AS ENUM ('OWNER', 'TECHNICIAN');
-                            END IF;
-                        END $$;
-                    """))
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS users (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            full_name VARCHAR(255) NOT NULL,
-                            email VARCHAR(255) NOT NULL UNIQUE,
-                            password_hash TEXT NOT NULL,
-                            role user_role NOT NULL DEFAULT 'TECHNICIAN',
-                            is_active BOOLEAN NOT NULL DEFAULT true,
-                            avatar_data TEXT,
-                            last_login_at TIMESTAMPTZ,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_users_shop_id ON users(shop_id)"))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)"))
-                    results.append("users: created/exists")
-                except Exception as e:
-                    results.append(f"users: error ({type(e).__name__})")
+                # 1. shops
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS shops (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        short_id VARCHAR(12) NOT NULL DEFAULT ('SHOP-' || UPPER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 6))),
+                        name VARCHAR(255) NOT NULL,
+                        phone VARCHAR(30),
+                        email VARCHAR(255),
+                        logo_key TEXT,
+                        address TEXT,
+                        pincode VARCHAR(10),
+                        gst_number VARCHAR(20),
+                        logo_data TEXT,
+                        plan VARCHAR(20) NOT NULL DEFAULT 'free',
+                        plan_expires_at TIMESTAMPTZ,
+                        is_active BOOLEAN NOT NULL DEFAULT true,
+                        shop_status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+                        admin_note TEXT,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                """))
+                results.append("shops: ok")
 
-                # 3. Invitations table
-                try:
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS invitations (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            email VARCHAR(255) NOT NULL,
-                            role user_role NOT NULL DEFAULT 'TECHNICIAN',
-                            token TEXT NOT NULL UNIQUE,
-                            accepted BOOLEAN NOT NULL DEFAULT false,
-                            expires_at TIMESTAMPTZ NOT NULL,
-                            created_by UUID NOT NULL REFERENCES users(id),
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    results.append("invitations: created/exists")
-                except Exception as e:
-                    results.append(f"invitations: error ({type(e).__name__})")
+                # 2. users
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                        full_name VARCHAR(255) NOT NULL,
+                        email VARCHAR(255) NOT NULL UNIQUE,
+                        password_hash TEXT NOT NULL,
+                        role user_role NOT NULL DEFAULT 'TECHNICIAN',
+                        is_active BOOLEAN NOT NULL DEFAULT true,
+                        avatar_data TEXT,
+                        last_login_at TIMESTAMPTZ,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                """))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_users_shop_id ON users(shop_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)"))
+                results.append("users: ok")
 
-                # 4. Customers table
-                try:
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS customers (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            short_id VARCHAR(10) NOT NULL DEFAULT ('CUS-' || UPPER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 6))),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            name VARCHAR(255) NOT NULL,
-                            phone VARCHAR(30) NOT NULL,
-                            email VARCHAR(255),
-                            notes TEXT,
-                            is_deleted BOOLEAN NOT NULL DEFAULT false,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            UNIQUE(shop_id, phone)
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_customers_shop_id ON customers(shop_id)"))
-                    await session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_short_id ON customers(short_id)"))
+                # 3. invitations
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS invitations (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                        email VARCHAR(255) NOT NULL,
+                        role user_role NOT NULL DEFAULT 'TECHNICIAN',
+                        token TEXT NOT NULL UNIQUE,
+                        accepted BOOLEAN NOT NULL DEFAULT false,
+                        expires_at TIMESTAMPTZ NOT NULL,
+                        created_by UUID NOT NULL REFERENCES users(id),
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                """))
+                results.append("invitations: ok")
 
-                    # Patch existing customers table with missing columns
-                    await session.execute(text("ALTER TABLE customers ADD COLUMN IF NOT EXISTS notes TEXT"))
-                    await session.execute(text("ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT false"))
-                    await session.execute(text("ALTER TABLE customers ALTER COLUMN phone TYPE VARCHAR(30)"))
+                # 4. customers
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS customers (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        short_id VARCHAR(10) NOT NULL DEFAULT ('CUS-' || UPPER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 6))),
+                        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                        name VARCHAR(255) NOT NULL,
+                        phone VARCHAR(30) NOT NULL,
+                        email VARCHAR(255),
+                        notes TEXT,
+                        is_deleted BOOLEAN NOT NULL DEFAULT false,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        UNIQUE(shop_id, phone)
+                    );
+                """))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_customers_shop_id ON customers(shop_id)"))
+                await session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_short_id ON customers(short_id)"))
+                results.append("customers: ok")
 
-                    results.append("customers: created/exists + patched")
-                except Exception as e:
-                    results.append(f"customers: error ({type(e).__name__})")
+                # 5. tickets
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS tickets (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                        customer_id UUID NOT NULL REFERENCES customers(id),
+                        assigned_to UUID REFERENCES users(id),
+                        ticket_number INTEGER NOT NULL,
+                        device_type VARCHAR(100) NOT NULL,
+                        device_model VARCHAR(150),
+                        reported_issue TEXT NOT NULL,
+                        technician_notes TEXT,
+                        status ticket_status NOT NULL DEFAULT 'RECEIVED',
+                        estimated_cost DECIMAL(10,2),
+                        final_cost DECIMAL(10,2),
+                        parts_cost DECIMAL(10,2) NOT NULL DEFAULT 0,
+                        profit DECIMAL(10,2),
+                        warranty_days INTEGER,
+                        pre_repair_checklist JSONB,
+                        customer_signature TEXT,
+                        customer_rating INTEGER,
+                        customer_feedback TEXT,
+                        is_deleted BOOLEAN NOT NULL DEFAULT false,
+                        created_by UUID NOT NULL REFERENCES users(id),
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        UNIQUE(shop_id, ticket_number)
+                    );
+                """))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_shop_id ON tickets(shop_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_customer_id ON tickets(customer_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_created_at ON tickets(created_at)"))
+                results.append("tickets: ok")
 
-                # 5. Tickets table
-                try:
-                    await session.execute(text("""
-                        DO $$ BEGIN
-                            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ticket_status') THEN
-                                CREATE TYPE ticket_status AS ENUM ('RECEIVED', 'IN_PROGRESS', 'WAITING_PARTS', 'READY', 'DELIVERED', 'CANCELLED');
-                            END IF;
-                        END $$;
-                    """))
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS tickets (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            customer_id UUID NOT NULL REFERENCES customers(id),
-                            assigned_to UUID REFERENCES users(id),
-                            ticket_number INTEGER NOT NULL,
-                            device_type VARCHAR(100) NOT NULL,
-                            device_model VARCHAR(150),
-                            reported_issue TEXT NOT NULL,
-                            technician_notes TEXT,
-                            status ticket_status NOT NULL DEFAULT 'RECEIVED',
-                            estimated_cost DECIMAL(10,2),
-                            final_cost DECIMAL(10,2),
-                            parts_cost DECIMAL(10,2) NOT NULL DEFAULT 0,
-                            profit DECIMAL(10,2),
-                            warranty_days INTEGER,
-                            pre_repair_checklist JSONB,
-                            customer_signature TEXT,
-                            customer_rating INTEGER,
-                            customer_feedback TEXT,
-                            is_deleted BOOLEAN NOT NULL DEFAULT false,
-                            created_by UUID NOT NULL REFERENCES users(id),
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            UNIQUE(shop_id, ticket_number)
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_shop_id ON tickets(shop_id)"))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_customer_id ON tickets(customer_id)"))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_created_at ON tickets(created_at)"))
+                # 6. ticket_charges
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS ticket_charges (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+                        name VARCHAR(200) NOT NULL,
+                        amount DECIMAL(10,2) NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                """))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_ticket_charges_ticket_id ON ticket_charges(ticket_id)"))
+                results.append("ticket_charges: ok")
 
-                    # Patch existing tickets table with missing columns
-                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT false"))
-                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id)"))
-                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS parts_cost DECIMAL(10,2) NOT NULL DEFAULT 0"))
-                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS profit DECIMAL(10,2)"))
-                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS pre_repair_checklist JSONB"))
-                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_signature TEXT"))
-                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_rating INTEGER"))
-                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_feedback TEXT"))
-                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS technician_notes TEXT"))
-                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS device_model VARCHAR(150)"))
-                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reported_issue TEXT"))
-                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_number INTEGER"))
-                    await session.execute(text("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS customer_id UUID REFERENCES customers(id)"))
+                # 7. ticket_images
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS ticket_images (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+                        minio_key TEXT NOT NULL,
+                        filename VARCHAR(255),
+                        size_bytes INTEGER,
+                        uploaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                """))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_ticket_images_ticket_id ON ticket_images(ticket_id)"))
+                results.append("ticket_images: ok")
 
-                    results.append("tickets: created/exists + patched")
-                except Exception as e:
-                    results.append(f"tickets: error ({type(e).__name__})")
+                # 8. ticket_status_logs
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS ticket_status_logs (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+                        from_status ticket_status,
+                        to_status ticket_status NOT NULL,
+                        notes TEXT,
+                        changed_by UUID NOT NULL REFERENCES users(id),
+                        changed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                """))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_status_logs_ticket_id ON ticket_status_logs(ticket_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_status_logs_changed_at ON ticket_status_logs(changed_at)"))
+                results.append("ticket_status_logs: ok")
 
-                # 6. Ticket status logs
-                try:
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS ticket_status_logs (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-                            from_status ticket_status,
-                            to_status ticket_status NOT NULL,
-                            notes TEXT,
-                            changed_by UUID REFERENCES users(id),
-                            changed_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_status_logs_ticket_id ON ticket_status_logs(ticket_id)"))
+                # 9. inventory_items
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS inventory_items (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        short_id VARCHAR(10) NOT NULL DEFAULT ('PRD-' || UPPER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 6))),
+                        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                        name VARCHAR(255) NOT NULL,
+                        sku VARCHAR(100),
+                        description TEXT,
+                        purchase_price DECIMAL(10,2) NOT NULL,
+                        selling_price DECIMAL(10,2) NOT NULL,
+                        quantity INTEGER NOT NULL DEFAULT 0,
+                        low_stock_threshold INTEGER NOT NULL DEFAULT 5,
+                        is_deleted BOOLEAN NOT NULL DEFAULT false,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                """))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_inventory_shop_id ON inventory_items(shop_id)"))
+                await session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_inventory_short_id ON inventory_items(short_id)"))
+                results.append("inventory_items: ok")
 
-                    # Patch existing table
-                    await session.execute(text("ALTER TABLE ticket_status_logs ADD COLUMN IF NOT EXISTS changed_at TIMESTAMPTZ NOT NULL DEFAULT now()"))
+                # 10. ticket_parts
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS ticket_parts (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+                        inventory_item_id UUID NOT NULL REFERENCES inventory_items(id),
+                        quantity_used INTEGER NOT NULL,
+                        unit_purchase_price DECIMAL(10,2) NOT NULL,
+                        unit_selling_price DECIMAL(10,2) NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                """))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_ticket_parts_ticket_id ON ticket_parts(ticket_id)"))
+                results.append("ticket_parts: ok")
 
-                    results.append("ticket_status_logs: created/exists + patched")
-                except Exception as e:
-                    results.append(f"ticket_status_logs: error ({type(e).__name__})")
+                # 11. vendors
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS vendors (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                        name VARCHAR(255) NOT NULL,
+                        contact_name VARCHAR(255),
+                        email VARCHAR(255),
+                        phone VARCHAR(50),
+                        address TEXT,
+                        website VARCHAR(255),
+                        notes TEXT,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                """))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_vendors_shop_id ON vendors(shop_id)"))
+                results.append("vendors: ok")
 
-                # 7. Inventory items
-                try:
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS inventory_items (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            short_id VARCHAR(10) NOT NULL DEFAULT ('PRD-' || UPPER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 6))),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            name VARCHAR(255) NOT NULL,
-                            sku VARCHAR(100),
-                            category VARCHAR(100),
-                            description TEXT,
-                            quantity INTEGER NOT NULL DEFAULT 0,
-                            min_quantity INTEGER NOT NULL DEFAULT 0,
-                            cost_price DECIMAL(10,2),
-                            selling_price DECIMAL(10,2),
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_inventory_shop_id ON inventory_items(shop_id)"))
-                    await session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_inventory_short_id ON inventory_items(short_id)"))
-                    results.append("inventory_items: created/exists")
-                except Exception as e:
-                    results.append(f"inventory_items: error ({type(e).__name__})")
+                # 12. purchase_orders
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS purchase_orders (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                        vendor_id UUID NOT NULL REFERENCES vendors(id),
+                        po_number VARCHAR(100) NOT NULL,
+                        status VARCHAR(50) NOT NULL DEFAULT 'DRAFT',
+                        total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+                        notes TEXT,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                """))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_po_shop_id ON purchase_orders(shop_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_po_number ON purchase_orders(po_number)"))
+                results.append("purchase_orders: ok")
 
-                # 8. Invoices
-                try:
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS invoices (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-                            invoice_number VARCHAR(50) NOT NULL UNIQUE,
-                            subtotal DECIMAL(10,2) NOT NULL DEFAULT 0,
-                            tax DECIMAL(10,2) NOT NULL DEFAULT 0,
-                            discount DECIMAL(10,2) NOT NULL DEFAULT 0,
-                            total DECIMAL(10,2) NOT NULL DEFAULT 0,
-                            status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    results.append("invoices: created/exists")
-                except Exception as e:
-                    results.append(f"invoices: error ({type(e).__name__})")
+                # 13. purchase_order_items
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS purchase_order_items (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        po_id UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+                        inventory_item_id UUID NOT NULL REFERENCES inventory_items(id),
+                        quantity INTEGER NOT NULL DEFAULT 1,
+                        unit_cost DECIMAL(10,2) NOT NULL DEFAULT 0,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                """))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_poi_po_id ON purchase_order_items(po_id)"))
+                results.append("purchase_order_items: ok")
 
-                # 9. Ticket charges
-                try:
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS ticket_charges (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-                            description TEXT NOT NULL,
-                            amount DECIMAL(10,2) NOT NULL,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    results.append("ticket_charges: created/exists")
-                except Exception as e:
-                    results.append(f"ticket_charges: error ({type(e).__name__})")
+                # 14. invoices
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS invoices (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        ticket_id UUID NOT NULL REFERENCES tickets(id),
+                        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                        invoice_number VARCHAR(30) NOT NULL,
+                        total_amount DECIMAL(10,2) NOT NULL,
+                        minio_key TEXT,
+                        public_token VARCHAR(64) NOT NULL UNIQUE,
+                        generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                """))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_invoices_ticket_id ON invoices(ticket_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_invoices_shop_id ON invoices(shop_id)"))
+                results.append("invoices: ok")
 
-                # 10. Vendors
-                try:
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS vendors (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            name VARCHAR(255) NOT NULL,
-                            contact_person VARCHAR(255),
-                            phone VARCHAR(30),
-                            email VARCHAR(255),
-                            address TEXT,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    results.append("vendors: created/exists")
-                except Exception as e:
-                    results.append(f"vendors: error ({type(e).__name__})")
+                # 15. billing: plans, features, plan_features, subscriptions
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS plans (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        name VARCHAR(100) NOT NULL UNIQUE,
+                        slug VARCHAR(50) NOT NULL UNIQUE,
+                        description TEXT,
+                        price_monthly DECIMAL(10,2) NOT NULL DEFAULT 0,
+                        price_yearly DECIMAL(10,2) NOT NULL DEFAULT 0,
+                        is_active BOOLEAN NOT NULL DEFAULT true,
+                        is_public BOOLEAN NOT NULL DEFAULT true,
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                """))
+                await session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_plan_slug ON plans(slug)"))
 
-                # 11. Purchase orders
-                try:
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS purchase_orders (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
-                            order_number VARCHAR(50) NOT NULL,
-                            status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
-                            total_amount DECIMAL(10,2) DEFAULT 0,
-                            notes TEXT,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    results.append("purchase_orders: created/exists")
-                except Exception as e:
-                    results.append(f"purchase_orders: error ({type(e).__name__})")
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS features (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        key VARCHAR(100) NOT NULL UNIQUE,
+                        name VARCHAR(200) NOT NULL,
+                        description TEXT,
+                        feature_type VARCHAR(20) NOT NULL DEFAULT 'boolean',
+                        default_value VARCHAR(100) NOT NULL DEFAULT 'false',
+                        is_active BOOLEAN NOT NULL DEFAULT true,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                """))
+                await session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_feature_key ON features(key)"))
 
-                # 12. Billing tables (plans, features, plan_features, subscriptions)
-                try:
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS plans (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            name VARCHAR(100) NOT NULL UNIQUE,
-                            slug VARCHAR(50) NOT NULL UNIQUE,
-                            description TEXT,
-                            price_monthly DECIMAL(10,2) NOT NULL DEFAULT 0,
-                            price_yearly DECIMAL(10,2) NOT NULL DEFAULT 0,
-                            is_active BOOLEAN NOT NULL DEFAULT true,
-                            is_public BOOLEAN NOT NULL DEFAULT true,
-                            sort_order INTEGER NOT NULL DEFAULT 0,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS features (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            key VARCHAR(100) NOT NULL UNIQUE,
-                            name VARCHAR(200) NOT NULL,
-                            description TEXT,
-                            feature_type VARCHAR(20) NOT NULL DEFAULT 'boolean',
-                            default_value VARCHAR(100) NOT NULL DEFAULT 'false',
-                            is_active BOOLEAN NOT NULL DEFAULT true,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS plan_features (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-                            feature_id UUID NOT NULL REFERENCES features(id) ON DELETE CASCADE,
-                            value VARCHAR(100) NOT NULL DEFAULT 'true',
-                            UNIQUE(plan_id, feature_id)
-                        );
-                    """))
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS subscriptions (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            plan_id UUID NOT NULL REFERENCES plans(id),
-                            status VARCHAR(20) NOT NULL DEFAULT 'active',
-                            billing_cycle VARCHAR(10) NOT NULL DEFAULT 'monthly',
-                            current_period_start TIMESTAMPTZ NOT NULL,
-                            current_period_end TIMESTAMPTZ NOT NULL,
-                            stripe_subscription_id VARCHAR(255),
-                            cancelled_at TIMESTAMPTZ,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            UNIQUE(shop_id)
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS ix_subscriptions_status ON subscriptions(status)"))
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS plan_features (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+                        feature_id UUID NOT NULL REFERENCES features(id) ON DELETE CASCADE,
+                        value VARCHAR(100) NOT NULL DEFAULT 'true',
+                        UNIQUE(plan_id, feature_id)
+                    );
+                """))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_pf_plan ON plan_features(plan_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_pf_feature ON plan_features(feature_id)"))
 
-                    # Seed default features
-                    await session.execute(text("""
-                        INSERT INTO features (key, name, description, feature_type, default_value, is_active)
-                        VALUES
-                            ('ticket_limit', 'Ticket Limit', 'Maximum active tickets', 'numeric', '25', true),
-                            ('team_limit', 'Team Members', 'Maximum team members', 'numeric', '2', true),
-                            ('inventory_limit', 'Inventory Items', 'Maximum inventory items', 'numeric', '100', true),
-                            ('customer_limit', 'Customers', 'Maximum customers', 'numeric', '200', true),
-                            ('analytics_access', 'Analytics Dashboard', 'Access to shop analytics', 'boolean', 'true', true),
-                            ('reports_access', 'Reports', 'Access to detailed reports', 'boolean', 'false', true),
-                            ('api_access', 'API Access', 'REST API access', 'boolean', 'false', true),
-                            ('custom_branding', 'Custom Branding', 'Custom logo and colors', 'boolean', 'false', true),
-                            ('priority_support', 'Priority Support', 'Priority customer support', 'boolean', 'false', true),
-                            ('image_storage_mb', 'Image Storage', 'Storage for ticket images in MB', 'numeric', '500', true)
-                        ON CONFLICT (key) DO NOTHING;
-                    """))
+                await session.execute(text("""
+                    CREATE TABLE IF NOT EXISTS subscriptions (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                        plan_id UUID NOT NULL REFERENCES plans(id),
+                        status VARCHAR(20) NOT NULL DEFAULT 'active',
+                        billing_cycle VARCHAR(10) NOT NULL DEFAULT 'monthly',
+                        current_period_start TIMESTAMPTZ NOT NULL,
+                        current_period_end TIMESTAMPTZ NOT NULL,
+                        stripe_subscription_id VARCHAR(255),
+                        cancelled_at TIMESTAMPTZ,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        UNIQUE(shop_id)
+                    );
+                """))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_sub_shop ON subscriptions(shop_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_sub_plan ON subscriptions(plan_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS idx_sub_status ON subscriptions(status)"))
 
-                    # Seed default plans
-                    await session.execute(text("""
-                        INSERT INTO plans (name, slug, description, price_monthly, price_yearly, is_active, is_public, sort_order)
-                        VALUES
-                            ('Free', 'free', 'Basic plan for small shops', 0, 0, true, true, 0),
-                            ('Pro', 'pro', 'Professional plan with all features', 29.99, 299.99, true, true, 1),
-                            ('Enterprise', 'enterprise', 'Unlimited everything', 99.99, 999.99, true, true, 2)
-                        ON CONFLICT (slug) DO NOTHING;
-                    """))
-                    results.append("billing tables: created/exists + seeded")
-                except Exception as e:
-                    results.append(f"billing tables: error ({type(e).__name__})")
+                # Seed features
+                await session.execute(text("""
+                    INSERT INTO features (key, name, description, feature_type, default_value, is_active) VALUES
+                        ('ticket_limit', 'Ticket Limit', 'Maximum active tickets', 'numeric', '25', true),
+                        ('team_limit', 'Team Members', 'Maximum team members', 'numeric', '2', true),
+                        ('inventory_limit', 'Inventory Items', 'Maximum inventory items', 'numeric', '100', true),
+                        ('customer_limit', 'Customers', 'Maximum customers', 'numeric', '200', true),
+                        ('analytics_access', 'Analytics Dashboard', 'Access to shop analytics', 'boolean', 'true', true),
+                        ('reports_access', 'Reports', 'Access to detailed reports', 'boolean', 'false', true),
+                        ('api_access', 'API Access', 'REST API access', 'boolean', 'false', true),
+                        ('custom_branding', 'Custom Branding', 'Custom logo and colors', 'boolean', 'false', true),
+                        ('priority_support', 'Priority Support', 'Priority customer support', 'boolean', 'false', true),
+                        ('image_storage_mb', 'Image Storage', 'Storage for ticket images in MB', 'numeric', '500', true)
+                    ON CONFLICT (key) DO NOTHING;
+                """))
+
+                # Seed plans
+                await session.execute(text("""
+                    INSERT INTO plans (name, slug, description, price_monthly, price_yearly, is_active, is_public, sort_order) VALUES
+                        ('Free', 'free', 'Basic plan for small shops', 0, 0, true, true, 0),
+                        ('Pro', 'pro', 'Professional plan with all features', 29.99, 299.99, true, true, 1),
+                        ('Enterprise', 'enterprise', 'Unlimited everything', 99.99, 999.99, true, true, 2)
+                    ON CONFLICT (slug) DO NOTHING;
+                """))
+                results.append("billing: ok + seeded")
 
                 await session.commit()
             return {"status": "ok", "results": results}
         except Exception as e:
+            import traceback
             return {"status": "error", "message": str(e), "traceback": traceback.format_exc(), "results": results}
 
     return app
