@@ -108,7 +108,11 @@ function useTheme() {
 // ── Notifications Bell ────────────────────────────────────────
 interface Notif { id: string; type: 'low_stock' | 'ready'; title: string; desc: string; href: string; }
 
-function NotificationsBell() {
+function NotificationsBell({
+    dropdownClassName = "absolute left-0 top-12 w-72"
+}: {
+    dropdownClassName?: string;
+}) {
     const [notifs, setNotifs] = useState<Notif[]>([]);
     const [open, setOpen] = useState(false);
     const [seen, setSeen] = useState<Set<string>>(() => {
@@ -126,10 +130,6 @@ function NotificationsBell() {
         const token = localStorage.getItem('token');
         if (!token) return;
 
-        // Use native EventSource to connect to our FastAPI SSE endpoint
-        // NOTE: Standard EventSource does not support passing headers (like Authorization: Bearer).
-        // For secure SSE, the backend should accept a signed token via query parameter or cookie.
-        // As a simple workaround for this implementation phase, we pass the token in the URL query string.
         const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
         const evtSource = new EventSource(`${baseUrl}/notifications/stream?token=${token}`);
 
@@ -146,7 +146,6 @@ function NotificationsBell() {
 
         evtSource.onerror = (err) => {
             console.error("SSE connection error", err);
-            // EventSource will automatically attempt to reconnect
         };
 
         return () => {
@@ -168,7 +167,7 @@ function NotificationsBell() {
     }
 
     return (
-        <div ref={ref} style={{ position: 'relative' }}>
+        <div ref={ref} className="relative shrink-0">
             <button onClick={handleOpen}
                 className="relative flex items-center justify-center w-11 h-11 rounded-lg hover:bg-muted transition text-muted-foreground hover:text-foreground"
                 title="Notifications"
@@ -181,18 +180,18 @@ function NotificationsBell() {
                 )}
             </button>
             {open && (
-                <div className="absolute left-0 top-10 w-72 bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                <div className={clsx("bg-card border border-border rounded-xl shadow-2xl z-[9999] flex flex-col", dropdownClassName)}>
+                    <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0 bg-card rounded-t-xl">
                         <span className="text-sm font-semibold text-foreground">Notifications</span>
                         {notifs.length > 0 && <button onClick={markAllRead} className="text-xs text-indigo-400 hover:text-indigo-300">Mark all read</button>}
                     </div>
                     {notifs.length === 0 ? (
-                        <div className="px-4 py-8 text-center">
+                        <div className="px-4 py-8 text-center shrink-0">
                             <CheckCircle className="w-8 h-8 text-muted-foreground mx-auto mb-2 opacity-50" />
                             <p className="text-xs text-muted-foreground opacity-80">All caught up! 🎉</p>
                         </div>
                     ) : (
-                        <div className="divide-y divide-border">
+                        <div className="divide-y divide-border overflow-y-auto min-h-[50px]">
                             {notifs.map(n => (
                                 <Link key={n.id} href={n.href} onClick={() => setOpen(false)}
                                     className="flex items-start gap-3 px-4 py-3 hover:bg-muted transition">
@@ -721,7 +720,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     <img src="/logo.png" alt="RepairDeskz" className="h-8 w-auto object-contain bg-white rounded-md flex-shrink-0" />
                     <span className="flex-1"></span>
                     <OfflineSyncManager />
-                    <NotificationsBell />
+                    <NotificationsBell dropdownClassName="fixed top-16 left-64 w-80 max-h-[80vh] shadow-[0_10px_40px_rgba(0,0,0,0.5)]" />
                 </div>
                 <SidebarContent />
             </aside>
@@ -736,7 +735,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     <button onClick={() => setQrOpen(true)} className="w-11 h-11 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted transition" title="Scan QR Code" aria-label="Scan QR Code">
                         <QrCode className="w-5 h-5" />
                     </button>
-                    <NotificationsBell />
+                    <NotificationsBell dropdownClassName="absolute right-0 top-12 w-72 sm:w-80 max-h-[70vh] shadow-2xl" />
                     <Link
                         href="/tickets/new"
                         className="flex items-center gap-1 px-3 py-2 rounded-lg gradient-primary text-white text-xs font-medium min-h-[44px]"
