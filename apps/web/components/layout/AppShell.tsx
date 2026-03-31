@@ -500,9 +500,9 @@ function SessionEjectedModal({ onDismiss }: { onDismiss: () => void }) {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 // Poll every 15 seconds so admin session kills take effect quickly
 const HEARTBEAT_INTERVAL_MS = 15_000;
-// Delay before the very first heartbeat — gives the browser time to commit
-// the httpOnly cookie from a fresh login (prevents false evictions on mount).
-const HEARTBEAT_WARMUP_MS = 5_000;
+// Delay before the very first heartbeat — increased to 30s to ensure
+// cross-origin httpOnly cookie is fully committed by the browser.
+const HEARTBEAT_WARMUP_MS = 30_000;
 
 function useSessionHeartbeat(onEvicted: () => void) {
     const onEvictedRef = useRef(onEvicted);
@@ -514,12 +514,32 @@ function useSessionHeartbeat(onEvicted: () => void) {
         async function heartbeat() {
             if (destroyed) return;
 
+            // Skip heartbeat if no access token is stored
             try {
+                const raw = localStorage.getItem("repairdesk-auth");
+                if (!raw) return;
+                const { state } = JSON.parse(raw);
+                if (!state?.accessToken) return;
+            } catch { return; }
+
+            try {
+                // Try to get refresh token from localStorage as fallback
+                let body = '{}';
+                try {
+                    const raw = localStorage.getItem("repairdesk-auth");
+                    if (raw) {
+                        const { state } = JSON.parse(raw);
+                        if (state?.refreshToken) {
+                            body = JSON.stringify({ refresh_token: state.refreshToken });
+                        }
+                    }
+                } catch { /* ignore */ }
+
                 const res = await fetch(`${API_URL}/auth/refresh`, {
                     method: 'POST',
                     credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
-                    body: '{}',
+                    body,
                 });
                 if (res.status === 401) {
                     if (!destroyed) onEvictedRef.current();

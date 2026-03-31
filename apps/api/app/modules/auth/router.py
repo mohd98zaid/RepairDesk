@@ -77,6 +77,7 @@ async def register(
 
     return TokenResponse(
         access_token=result["access_token"],
+        refresh_token=result["refresh_token"],
         user=user_payload,
     )
 
@@ -112,17 +113,33 @@ async def login(
 
     return TokenResponse(
         access_token=result["access_token"],
+        refresh_token=result["refresh_token"],
         user=user_payload,
     )
 
 
 @router.post("/refresh", response_model=RefreshResponse)
 async def refresh(
+    request: Request,
     db: DbSession,
-    refresh_token: str = Depends(get_refresh_token),
+    repairdesk_refresh: str | None = Cookie(default=None),
 ):
-    """Exchange a valid refresh token for a new access token."""
-    access_token = await service.refresh_access_token(refresh_token, db)
+    """Exchange a valid refresh token for a new access token.
+    
+    Accepts refresh token from httpOnly cookie OR request body (fallback for cross-origin).
+    """
+    token = repairdesk_refresh
+    if not token:
+        try:
+            body = await request.json()
+            token = body.get("refresh_token")
+        except Exception:
+            pass
+    
+    if not token:
+        raise UnauthorizedException("Refresh token not found.")
+    
+    access_token = await service.refresh_access_token(token, db)
     return RefreshResponse(access_token=access_token)
 
 
@@ -190,5 +207,6 @@ async def force_logout_login(
 
     return TokenResponse(
         access_token=result["access_token"],
+        refresh_token=result["refresh_token"],
         user=user_payload,
     )
