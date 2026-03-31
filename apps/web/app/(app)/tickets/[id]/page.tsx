@@ -824,7 +824,7 @@ export default function TicketDetailPage() {
                                 </label>
                             </div>
                         )}
-                        <div className="grid grid-cols-2 gap-2">
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
                             {availableTransitions.map((status) => (
                                 <button key={status} onClick={() => handleStatusChange(status)}
                                     disabled={changingStatus}
