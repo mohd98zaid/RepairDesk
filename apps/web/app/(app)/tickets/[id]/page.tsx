@@ -743,43 +743,99 @@ export default function TicketDetailPage() {
     return (
         <div className="p-4 sm:p-6 max-w-4xl mx-auto">
             {/* Header */}
-            <div className="flex items-center gap-3 mb-6">
-                <Link href="/tickets" className="text-muted-foreground hover:text-foreground">
-                    <ArrowLeft className="w-5 h-5" />
-                </Link>
-                <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                        <h1 className="text-2xl font-bold text-foreground">{fmtTicketId(ticket.ticket_number)}</h1>
-                        <StatusBadge status={ticket.status} />
+            <div className="mb-6">
+                <div className="flex items-center gap-3 mb-3">
+                    <Link href="/tickets" className="text-muted-foreground hover:text-foreground shrink-0">
+                        <ArrowLeft className="w-5 h-5" />
+                    </Link>
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <h1 className="text-xl sm:text-2xl font-bold text-foreground">{fmtTicketId(ticket.ticket_number)}</h1>
+                            <StatusBadge status={ticket.status} />
+                        </div>
+                        <p className="text-muted-foreground font-medium text-sm mt-0.5">
+                            Created {new Date(ticket.created_at).toLocaleDateString()}
+                        </p>
                     </div>
-                    <p className="text-muted-foreground font-medium text-sm mt-0.5">
-                        Created {new Date(ticket.created_at).toLocaleDateString()}
-                    </p>
                 </div>
-                {/* Invoice + Print buttons */}
-                <div className="flex items-center gap-2">
+                {/* Invoice + Print buttons — wrap on mobile */}
+                <div className="flex items-center gap-2 flex-wrap ml-8 sm:ml-0">
                     <PrintLabel ticket={ticket} shopName={(user as any)?.shop_name || "RepairDesk"} />
                     {invoice ? (
                         <>
                             <a href={invoice.download_url} target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted border border-border shadow-sm hover:bg-muted/80 text-foreground text-sm transition">
+                                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted border border-border shadow-sm hover:bg-muted/80 text-foreground text-sm transition whitespace-nowrap">
                                 <Download className="w-4 h-4" />{invoice.invoice_number}
                             </a>
                             <button onClick={handleCheckout} disabled={checkoutLoading}
-                                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition shadow-sm disabled:opacity-50">
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition shadow-sm disabled:opacity-50 whitespace-nowrap">
                                 {checkoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
                                 Pay Now
                             </button>
                         </>
                     ) : (
                         <button onClick={handleGenerateInvoice} disabled={generatingInvoice}
-                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted border border-border shadow-sm hover:bg-muted/80 text-foreground text-sm transition disabled:opacity-50">
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted border border-border shadow-sm hover:bg-muted/80 text-foreground text-sm transition disabled:opacity-50 whitespace-nowrap">
                             {generatingInvoice ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                             Invoice
                         </button>
                     )}
                 </div>
             </div>
+
+            {/* ── Status Change Panel — shown at TOP on mobile, in right column on desktop ── */}
+            {availableTransitions.length > 0 && (
+                <div className="md:hidden mb-5">
+                    <div className="bg-card border border-border shadow-sm rounded-xl p-4">
+                        <h2 className="text-sm font-semibold text-foreground mb-3">Change Status</h2>
+                        {statusError && (
+                            <p className="text-danger text-xs mb-3 p-2 bg-danger/10 rounded-lg border border-danger/20">{statusError}</p>
+                        )}
+                        {/* Quick Replies */}
+                        <div className="mb-2">
+                            <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1"><MessageSquare className="w-3 h-3" /> Quick replies</p>
+                            <div className="flex flex-wrap gap-1.5">
+                                {QUICK_REPLIES.map(r => (
+                                    <button key={r.label} onClick={() => setStatusNotes(r.text)}
+                                        className="text-xs px-2 py-1.5 rounded-md bg-muted hover:bg-primary/20 hover:text-primary text-muted-foreground border border-border hover:border-primary/50 transition min-h-[36px]">
+                                        {r.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <textarea
+                            value={statusNotes}
+                            onChange={(e) => setStatusNotes(e.target.value)}
+                            placeholder="Add a note (optional)…"
+                            rows={2}
+                            className="w-full px-3 py-2 rounded-lg bg-card border border-border shadow-sm text-foreground placeholder-muted-foreground text-sm focus:outline-none focus:border-primary resize-none mb-3"
+                        />
+                        {ticket.customer?.phone && (
+                            <div className="flex gap-4 mb-3 px-1">
+                                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                                    <input type="checkbox" checked={notifyWhatsApp} onChange={e => setNotifyWhatsApp(e.target.checked)} className="rounded border-border accent-emerald-500" />
+                                    <MessageCircle className="w-3.5 h-3.5 text-emerald-500" />
+                                    Notify WhatsApp
+                                </label>
+                                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                                    <input type="checkbox" checked={notifySMS} onChange={e => setNotifySMS(e.target.checked)} className="rounded border-border accent-primary" />
+                                    <PhoneIcon className="w-3.5 h-3.5 text-primary" />
+                                    Notify SMS
+                                </label>
+                            </div>
+                        )}
+                        <div className="grid grid-cols-2 gap-2">
+                            {availableTransitions.map((status) => (
+                                <button key={status} onClick={() => handleStatusChange(status)}
+                                    disabled={changingStatus}
+                                    className="py-2.5 px-3 rounded-lg bg-muted border border-border shadow-sm hover:bg-muted/80 text-foreground font-medium text-sm text-center transition disabled:opacity-50 min-h-[44px] flex items-center justify-center">
+                                    {changingStatus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (STATUS_LABELS[status] ?? status.replace(/_/g, " "))}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="grid md:grid-cols-3 gap-5">
                 {/* Left column — details */}
@@ -1159,9 +1215,9 @@ export default function TicketDetailPage() {
                         </p>
                     </div>
 
-                    {/* Status change panel */}
+                    {/* Status change panel — hidden on mobile (shown at top instead) */}
                     {availableTransitions.length > 0 && (
-                        <div className="bg-card border border-border shadow-sm rounded-xl p-5">
+                        <div className="hidden md:block bg-card border border-border shadow-sm rounded-xl p-5">
                             <h2 className="text-sm font-semibold text-foreground mb-3">Change Status</h2>
                             {statusError && (
                                 <p className="text-danger text-xs mb-3 p-2 bg-danger/10 rounded-lg border border-danger/20">{statusError}</p>
