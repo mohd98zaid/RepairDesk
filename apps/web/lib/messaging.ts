@@ -92,7 +92,7 @@ export function buildStatusUpdateMessage(data: TicketMessageData, notes?: string
     ...(notes ? [`${EMOJI.speech} *Note:* ${notes}`] : []),
     ...(data.finalCost ? [`${EMOJI.money} *Final Cost:* Rs. ${data.finalCost}`] : []),
     ``,
-    `${EMOJI.link} *Track your repair:* ${appUrl}/feedback/${ticketId}`,
+    `${EMOJI.link} *Track your repair:* ${appUrl}/feedback/${data.ticketId}`,
     ``,
     `Thank you for your patience! ${EMOJI.pray}`,
   ];

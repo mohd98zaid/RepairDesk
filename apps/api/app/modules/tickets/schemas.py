@@ -158,6 +158,8 @@ class TicketListResponse(BaseModel):
     profit: str | None = None
     created_at: datetime
     updated_at: datetime
+    created_by: str | None = None
+    created_by_name: str | None = None
     model_config = {"from_attributes": True}
 
 

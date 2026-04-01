@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
     ArrowLeft,
@@ -27,7 +27,8 @@ import {
     MessageCircle,
     Phone as PhoneIcon,
 } from "lucide-react";
-import { ticketsApi } from "@/lib/api/tickets";
+import { ticketsApi, shopsApi } from "@/lib/api/tickets";
+import type { Shop } from "@/types";
 import { teamApi } from "@/lib/api/team";
 import { StatusBadge } from "@/components/tickets/StatusBadge";
 import { PartsSelector } from "@/components/tickets/PartsSelector";
@@ -123,24 +124,28 @@ function StarRating({ ticket, onUpdate }: { ticket: TicketDetail; onUpdate: (t: 
 }
 
 // ── Print Ticket Invoice / Label ──────────────────────────────
-function PrintLabel({ ticket, shopName }: {
+function PrintLabel({ ticket }: {
     ticket: TicketDetail;
-    shopName?: string;
 }) {
-    function handlePrint() {
-        const win = window.open("", "_blank", "width=800,height=680");
+    async function handlePrint() {
+        // Fetch live shop details for the invoice header
+        let shop: Shop | null = null;
+        try { shop = await shopsApi.getMyShop(); } catch { /* no-op — degrade gracefully */ }
+
+        const win = window.open("", "_blank", "width=860,height=720");
         if (!win) return;
 
         const ticketId   = `RD-${String(ticket.ticket_number).padStart(5, "0")}`;
-        const qrUrl      = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(ticket.id)}`;
         const trackUrl   = `${window.location.origin}/feedback/${ticket.id}`;
-        const createdAt  = new Date(ticket.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-        const now        = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+        const qrUrl      = `https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(trackUrl)}`;
+        const createdAt  = new Date(ticket.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
+        const now        = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
 
-        const partsCost  = parseFloat(ticket.parts_cost || "0");
-        const charges    = ticket.charges || [];
-        const chargesTotal = charges.reduce((s, c) => s + parseFloat(c.amount || "0"), 0);
-        const finalCost  = parseFloat(ticket.final_cost || "0") || (partsCost + chargesTotal);
+        const parts   = ticket.parts  || [];
+        const charges = ticket.charges || [];
+        const partsCost     = parseFloat(ticket.parts_cost || "0");
+        const chargesTotal  = charges.reduce((s, c) => s + parseFloat(c.amount || "0"), 0);
+        const finalCost     = parseFloat(ticket.final_cost || "0") || (partsCost + chargesTotal);
 
         const STATUS_MAP: Record<string, string> = {
             RECEIVED: "Received", IN_PROGRESS: "In Progress",
@@ -149,6 +154,18 @@ function PrintLabel({ ticket, shopName }: {
         };
 
         const sig = ticket.customer_signature;
+
+        // ── Shop metadata ───────────────────────────────────
+        const shopName    = shop?.name    || "RepairDesk";
+        const shopPhone   = shop?.phone   || "";
+        const shopEmail   = shop?.email   || "";
+        const shopAddress = shop?.address || "";
+        const shopPincode = shop?.pincode || "";
+        const shopGst     = shop?.gst_number || "";
+        const shopLogo    = shop?.logo_data  || "";
+
+        // Build address line
+        const addressLine = [shopAddress, shopPincode].filter(Boolean).join(", ");
 
         const html = `<!DOCTYPE html>
 <html>
@@ -163,7 +180,7 @@ function PrintLabel({ ticket, shopName }: {
     color: #1a1a2e;
     font-size: 13px;
     padding: 32px;
-    max-width: 720px;
+    max-width: 760px;
     margin: 0 auto;
   }
 
@@ -172,44 +189,26 @@ function PrintLabel({ ticket, shopName }: {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    padding-bottom: 20px;
+    padding-bottom: 18px;
     border-bottom: 3px solid #4f46e5;
     margin-bottom: 20px;
+    gap: 16px;
   }
-  .brand-name {
-    font-size: 22px;
-    font-weight: 800;
-    color: #4f46e5;
-    letter-spacing: -0.5px;
+  .brand-block { display: flex; align-items: flex-start; gap: 12px; }
+  .brand-logo { width: 52px; height: 52px; border-radius: 10px; object-fit: contain; border: 1px solid #e5e7eb; }
+  .brand-logo-placeholder {
+    width: 52px; height: 52px; border-radius: 10px;
+    background: linear-gradient(135deg, #4f46e5, #7c3aed);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 800; color: #fff; letter-spacing: -1px;
+    flex-shrink: 0;
   }
-  .brand-sub {
-    font-size: 11px;
-    color: #6b7280;
-    margin-top: 2px;
-  }
-  .invoice-meta { text-align: right; }
-  .invoice-meta .invoice-id {
-    font-size: 18px;
-    font-weight: 800;
-    color: #1a1a2e;
-    letter-spacing: 1px;
-  }
-  .invoice-meta .invoice-date {
-    font-size: 11px;
-    color: #6b7280;
-    margin-top: 4px;
-  }
-
-  /* ── Status pill ───────────────────────────── */
+  .brand-name { font-size: 20px; font-weight: 800; color: #4f46e5; letter-spacing: -0.5px; }
+  .brand-contact { font-size: 11px; color: #6b7280; margin-top: 3px; line-height: 1.6; }
+  .brand-contact span { display: block; }
   .status-pill {
-    display: inline-block;
-    padding: 3px 12px;
-    border-radius: 99px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    margin-top: 6px;
-    text-transform: uppercase;
+    display: inline-block; padding: 3px 12px; border-radius: 99px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.5px; margin-top: 6px; text-transform: uppercase;
   }
   .status-RECEIVED      { background:#dbeafe; color:#1d4ed8; }
   .status-IN_PROGRESS   { background:#fef3c7; color:#b45309; }
@@ -218,105 +217,51 @@ function PrintLabel({ ticket, shopName }: {
   .status-DELIVERED     { background:#ede9fe; color:#6d28d9; }
   .status-CANCELLED     { background:#fee2e2; color:#b91c1c; }
 
-  /* ── 2-col info block ──────────────────────── */
-  .info-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-bottom: 20px;
-  }
-  .info-box {
-    background: #f8f9ff;
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
-    padding: 14px 16px;
-  }
-  .info-box-title {
-    font-size: 10px;
-    font-weight: 700;
-    color: #9ca3af;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    margin-bottom: 10px;
-  }
-  .info-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 6px;
-    gap: 8px;
-  }
+  .invoice-meta { text-align: right; flex-shrink: 0; }
+  .invoice-meta .invoice-id { font-size: 18px; font-weight: 800; color: #1a1a2e; letter-spacing: 1px; }
+  .invoice-meta .invoice-date { font-size: 11px; color: #6b7280; margin-top: 4px; }
+
+  /* ── Info grid ─────────────────────────────── */
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+  .info-box { background: #f8f9ff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; }
+  .info-box-title { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
+  .info-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; gap: 8px; }
   .info-label { color: #6b7280; font-size: 12px; white-space: nowrap; }
   .info-value { color: #1a1a2e; font-size: 12px; font-weight: 600; text-align: right; max-width: 180px; word-break: break-word; }
 
-  /* ── Charges table ─────────────────────────── */
-  .section-title {
-    font-size: 10px;
-    font-weight: 700;
-    color: #9ca3af;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    margin-bottom: 8px;
-  }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+  /* ── Cost breakdown table ───────────────────── */
+  .section-title { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
+  .group-label { font-size: 10px; font-weight: 700; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.7px; padding: 6px 10px; background: #ede9fe; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
   thead tr { background: #f3f4f6; }
-  th {
-    text-align: left;
-    padding: 7px 10px;
-    font-size: 11px;
-    font-weight: 700;
-    color: #6b7280;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
+  th { text-align: left; padding: 7px 10px; font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
   th:last-child { text-align: right; }
+  th:nth-child(2), th:nth-child(3) { text-align: right; }
   td { padding: 8px 10px; font-size: 12px; color: #374151; border-bottom: 1px solid #f3f4f6; }
   td:last-child { text-align: right; font-weight: 600; color: #1a1a2e; }
-  .total-row td { border-top: 2px solid #e5e7eb; border-bottom: none; font-weight: 700; font-size: 13px; color: #1a1a2e; }
-  .total-row td:last-child { color: #4f46e5; font-size: 15px; }
+  td:nth-child(2), td:nth-child(3) { text-align: right; }
+  .subtotal-row td { border-top: 1px dashed #e5e7eb; border-bottom: none; font-size: 11px; color: #6b7280; font-style: italic; }
+  .subtotal-row td:last-child { color: #374151; font-weight: 700; }
+  .total-row td { border-top: 2px solid #e5e7eb; border-bottom: none; font-weight: 700; font-size: 13px; color: #1a1a2e; padding-top: 10px; }
+  .total-row td:last-child { color: #4f46e5; font-size: 16px; }
 
-  /* ── Footer row ────────────────────────────── */
-  .footer-row {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    margin-top: 16px;
-    gap: 16px;
-  }
-  .qr-block { text-align: center; }
+  /* ── Footer ────────────────────────────────── */
+  .footer-row { display: flex; align-items: flex-end; justify-content: space-between; margin-top: 18px; gap: 14px; }
+  .qr-block { text-align: center; flex-shrink: 0; }
   .qr-block img { border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px; }
   .qr-caption { font-size: 9px; color: #9ca3af; margin-top: 4px; }
-
   .sig-block {
-    flex: 1;
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
-    padding: 12px 16px;
-    min-height: 80px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
+    flex: 1; border: 1px solid #e5e7eb; border-radius: 10px;
+    padding: 12px 16px; min-height: 80px;
+    display: flex; flex-direction: column; justify-content: space-between;
   }
   .sig-label { font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 4px; }
-  .sig-img { max-height: 64px; max-width: 200px; object-fit: contain; }
-
-  .terms-block {
-    flex: 1;
-    font-size: 10px;
-    color: #9ca3af;
-    line-height: 1.6;
-  }
-  .terms-block strong { color: #6b7280; display: block; margin-bottom: 4px; }
-
-  .track-block {
-    text-align: center;
-    border: 1px dashed #c4b5fd;
-    border-radius: 8px;
-    padding: 8px 14px;
-    background: #faf5ff;
-  }
+  .sig-img   { max-height: 64px; max-width: 200px; object-fit: contain; }
+  .track-block { text-align: center; border: 1px dashed #c4b5fd; border-radius: 8px; padding: 8px 14px; background: #faf5ff; }
   .track-label { font-size: 10px; color: #7c3aed; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; }
   .track-url   { font-size: 10px; color: #6d28d9; margin-top: 2px; word-break: break-all; }
+  .terms-block { flex: 1; font-size: 10px; color: #9ca3af; line-height: 1.6; }
+  .terms-block strong { color: #6b7280; display: block; margin-bottom: 4px; }
 
   @media print {
     body { padding: 16px; }
@@ -328,10 +273,21 @@ function PrintLabel({ ticket, shopName }: {
 
 <!-- ── Header ── -->
 <div class="header">
-  <div>
-    <div class="brand-name">${escHtml(shopName || "RepairDesk")}</div>
-    <div class="brand-sub">Professional Repair Management</div>
-    <div class="status-pill status-${ticket.status}">${escHtml(STATUS_MAP[ticket.status] || ticket.status)}</div>
+  <div class="brand-block">
+    ${shopLogo
+        ? `<img class="brand-logo" src="${shopLogo}" alt="logo"/>`
+        : `<div class="brand-logo-placeholder">${escHtml(shopName[0] || "R")}</div>`
+    }
+    <div>
+      <div class="brand-name">${escHtml(shopName)}</div>
+      <div class="brand-contact">
+        ${addressLine ? `<span>${escHtml(addressLine)}</span>` : ""}
+        ${shopPhone  ? `<span>&#128222; ${escHtml(shopPhone)}</span>` : ""}
+        ${shopEmail  ? `<span>&#9993; ${escHtml(shopEmail)}</span>` : ""}
+        ${shopGst    ? `<span>GST: ${escHtml(shopGst)}</span>` : ""}
+      </div>
+      <div class="status-pill status-${ticket.status}">${escHtml(STATUS_MAP[ticket.status] || ticket.status)}</div>
+    </div>
   </div>
   <div class="invoice-meta">
     <div class="invoice-id">${escHtml(ticketId)}</div>
@@ -342,15 +298,14 @@ function PrintLabel({ ticket, shopName }: {
 
 <!-- ── Info grid ── -->
 <div class="info-grid">
-  <!-- Customer -->
   <div class="info-box">
     <div class="info-box-title">Customer</div>
     ${ticket.customer ? `
     <div class="info-row"><span class="info-label">Name</span><span class="info-value">${escHtml(ticket.customer.name)}</span></div>
     <div class="info-row"><span class="info-label">Phone</span><span class="info-value">${escHtml(ticket.customer.phone)}</span></div>
+    ${ticket.customer.email ? `<div class="info-row"><span class="info-label">Email</span><span class="info-value">${escHtml(ticket.customer.email)}</span></div>` : ""}
     ` : `<div class="info-value" style="color:#9ca3af">—</div>`}
   </div>
-  <!-- Device -->
   <div class="info-box">
     <div class="info-box-title">Device</div>
     <div class="info-row"><span class="info-label">Type</span><span class="info-value">${escHtml(ticket.device_type)}</span></div>
@@ -360,22 +315,59 @@ function PrintLabel({ ticket, shopName }: {
   </div>
 </div>
 
-<!-- ── Charges table ── -->
-<div class="section-title">Repair Details & Cost</div>
+<!-- ── Repair Cost Breakdown ── -->
+<div class="section-title">Repair Cost Breakdown</div>
 <table>
   <thead>
     <tr>
       <th>Description</th>
-      <th style="text-align:right">Amount</th>
+      <th>Qty</th>
+      <th>Unit Price</th>
+      <th>Amount</th>
     </tr>
   </thead>
   <tbody>
-    ${(ticket.parts || []).map((p: any) => `<tr><td>${escHtml(p.name)} (x${p.quantity || p.quantity_used || 1})</td><td>Rs. ${((p.quantity || p.quantity_used || 1) * parseFloat(p.cost || p.unit_selling_price || "0")).toFixed(2)}</td></tr>`).join("")}
-    ${!(ticket.parts?.length) && partsCost > 0 ? `<tr><td>Parts &amp; Components</td><td>Rs. ${partsCost.toFixed(2)}</td></tr>` : ""}
-    ${charges.map(c => `<tr><td>${escHtml(c.name)}</td><td>Rs. ${parseFloat(c.amount).toFixed(2)}</td></tr>`).join("")}
-    ${partsCost === 0 && charges.length === 0 ? `<tr><td colspan="2" style="color:#9ca3af;text-align:center;padding:12px">No charges added yet</td></tr>` : ""}
+    <!-- Parts section -->
+    ${parts.length > 0 ? `
+    <tr><td colspan="4" class="group-label">&#128296; Parts &amp; Components</td></tr>
+    ${parts.map((p: any) => {
+        const qty  = p.quantity_used || p.quantity || 1;
+        const unit = parseFloat(p.unit_selling_price || p.cost || "0");
+        const line = qty * unit;
+        return `<tr>
+          <td>${escHtml(p.name)}</td>
+          <td>${qty}</td>
+          <td>Rs. ${unit.toFixed(2)}</td>
+          <td>Rs. ${line.toFixed(2)}</td>
+        </tr>`;
+    }).join("")}
+    <tr class="subtotal-row"><td colspan="3">Parts Subtotal</td><td>Rs. ${partsCost.toFixed(2)}</td></tr>
+    ` : (partsCost > 0 ? `
+    <tr><td colspan="4" class="group-label">&#128296; Parts &amp; Components</td></tr>
+    <tr><td>Parts &amp; Components</td><td>—</td><td>—</td><td>Rs. ${partsCost.toFixed(2)}</td></tr>
+    <tr class="subtotal-row"><td colspan="3">Parts Subtotal</td><td>Rs. ${partsCost.toFixed(2)}</td></tr>
+    ` : "")}
+
+    <!-- Charges / Labour section -->
+    ${charges.length > 0 ? `
+    <tr><td colspan="4" class="group-label">&#128295; Labour &amp; Service Charges</td></tr>
+    ${charges.map((c: any) => `<tr>
+      <td>${escHtml(c.name)}</td>
+      <td>1</td>
+      <td>Rs. ${parseFloat(c.amount).toFixed(2)}</td>
+      <td>Rs. ${parseFloat(c.amount).toFixed(2)}</td>
+    </tr>`).join("")}
+    <tr class="subtotal-row"><td colspan="3">Labour Subtotal</td><td>Rs. ${chargesTotal.toFixed(2)}</td></tr>
+    ` : ""}
+
+    <!-- Empty state -->
+    ${parts.length === 0 && charges.length === 0 && partsCost === 0
+        ? `<tr><td colspan="4" style="color:#9ca3af;text-align:center;padding:14px">No charges added yet</td></tr>`
+        : ""}
+
+    <!-- Grand total -->
     <tr class="total-row">
-      <td>Total</td>
+      <td colspan="3">Grand Total</td>
       <td>Rs. ${finalCost.toFixed(2)}</td>
     </tr>
   </tbody>
@@ -383,20 +375,16 @@ function PrintLabel({ ticket, shopName }: {
 
 <!-- ── Footer row ── -->
 <div class="footer-row">
-
-  <!-- QR -->
   <div class="qr-block">
-    <img src="${qrUrl}" alt="QR" width="90" height="90"/>
-    <div class="qr-caption">Scan to track</div>
+    <img src="${qrUrl}" alt="QR" width="100" height="100"/>
+    <div class="qr-caption">Scan to track repair</div>
   </div>
 
-  <!-- Signature -->
   <div class="sig-block">
     <div class="sig-label">Customer Signature</div>
     ${sig ? `<img class="sig-img" src="${sig}" alt="Signature"/>` : `<div style="font-size:10px;color:#d1d5db;font-style:italic;margin-top:8px">No signature captured</div>`}
   </div>
 
-  <!-- Terms + Track link -->
   <div style="display:flex;flex-direction:column;gap:10px;flex:1">
     <div class="track-block">
       <div class="track-label">Track Your Repair</div>
@@ -404,12 +392,9 @@ function PrintLabel({ ticket, shopName }: {
     </div>
     <div class="terms-block">
       <strong>Terms &amp; Conditions</strong>
-      All repaired devices carry a warranty only as specified above.
-      Uncollected devices after 30 days may incur storage charges.
-      Payment is due at the time of collection.
+      Warranty applies only as specified above. Uncollected devices after 30 days may incur storage charges. Payment is due at the time of collection.
     </div>
   </div>
-
 </div>
 
 <script>window.onload = () => { setTimeout(() => window.print(), 400); }</script>
@@ -474,6 +459,7 @@ function StatusTimeline({ logs }: { logs: TicketDetail["status_logs"] }) {
 
 export default function TicketDetailPage() {
     const { id } = useParams<{ id: string }>();
+    const router = useRouter();
     const { user } = useAuthStore();
     const [ticket, setTicket] = useState<TicketDetail | null>(null);
     const [loading, setLoading] = useState(true);
@@ -703,6 +689,18 @@ export default function TicketDetailPage() {
     }
 
     const availableTransitions = STATUS_TRANSITIONS[ticket.status] ?? [];
+    const isOwner = user?.role === "OWNER";
+
+    const handleDeleteTicket = async () => {
+        if (!ticket) return;
+        if (!window.confirm(`Permanently delete ticket ${fmtTicketId(ticket.ticket_number)}? This cannot be undone and will restore any inventory parts.`)) return;
+        try {
+            await ticketsApi.delete(ticket.id);
+            router.push("/tickets");
+        } catch {
+            alert("Failed to delete ticket. Please try again.");
+        }
+    };
 
     return (
         <div className="p-4 sm:p-6 max-w-4xl mx-auto">
@@ -724,7 +722,18 @@ export default function TicketDetailPage() {
                 </div>
                 {/* Invoice + Print buttons — wrap on mobile */}
                 <div className="flex items-center gap-2 flex-wrap ml-8 sm:ml-0">
-                    <PrintLabel ticket={ticket} shopName={(user as any)?.shop_name || "RepairDesk"} />
+                    <PrintLabel ticket={ticket} />
+                    {/* Delete button — Owners only, any status */}
+                    {isOwner && (
+                        <button
+                            onClick={handleDeleteTicket}
+                            id="delete-ticket-btn"
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-danger/10 hover:bg-danger/20 text-danger text-sm transition border border-danger/20 shadow-sm"
+                            title="Delete ticket permanently"
+                        >
+                            <Trash2 className="w-4 h-4" /> Delete
+                        </button>
+                    )}
                 </div>
             </div>
 

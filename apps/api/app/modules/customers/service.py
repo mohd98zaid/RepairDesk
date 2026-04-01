@@ -41,6 +41,7 @@ async def list_customers(
     per_page: int,
     db: AsyncSession,
 ) -> dict[str, Any]:
+    from sqlalchemy import case, outerjoin
     base_query = select(Customer).where(
         Customer.shop_id == shop_id, Customer.is_deleted == False
     )
@@ -61,6 +62,39 @@ async def list_customers(
         base_query.order_by(Customer.created_at.desc()).offset(offset).limit(per_page)
     )
     items = items_result.scalars().all()
+
+    # Compute revenue stats for each customer in bulk (one query)
+    if items:
+        customer_ids = [c.id for c in items]
+        stats_result = await db.execute(
+            select(
+                Ticket.customer_id,
+                func.count(Ticket.id).label("ticket_count"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (Ticket.status == "DELIVERED", func.coalesce(Ticket.final_cost, 0)),
+                            else_=0
+                        )
+                    ),
+                    0
+                ).label("total_spent"),
+            )
+            .where(
+                Ticket.customer_id.in_(customer_ids),
+                Ticket.is_deleted == False,
+            )
+            .group_by(Ticket.customer_id)
+        )
+        stats_by_customer = {
+            row.customer_id: {"ticket_count": row.ticket_count, "total_spent": str(row.total_spent)}
+            for row in stats_result.all()
+        }
+        # Attach computed stats as transient attributes
+        for c in items:
+            stats = stats_by_customer.get(c.id, {"ticket_count": 0, "total_spent": "0.00"})
+            c.ticket_count = stats["ticket_count"]
+            c.total_spent = stats["total_spent"]
 
     return {
         "total": total,

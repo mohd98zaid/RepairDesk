@@ -44,11 +44,16 @@ const navItems = [
     { href: "/reports", label: "Reports", icon: BarChart2 },
 ];
 
-const settingsItems = [
+// All settings items — Owner sees all; Technician sees none (hidden via RBAC in rendering)
+const settingsItemsOwner = [
     { href: "/settings/shop", label: "Shop", icon: Store },
     { href: "/settings/team", label: "Team", icon: Users },
     { href: "/settings/sessions", label: "Sessions", icon: MonitorSmartphone },
     { href: "/settings/activity", label: "Activity Log", icon: Activity },
+];
+const settingsItemsTechnician = [
+    { href: "/settings/shop", label: "Shop Profile", icon: Store },
+    { href: "/settings/sessions", label: "Sessions", icon: MonitorSmartphone },
 ];
 
 function NavLink({
@@ -606,22 +611,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         setMounted(true);
-        // Auth guard — redirect to login if no token or expired token
-        const raw = localStorage.getItem("repairdesk-auth");
-        if (!raw) {
-            router.push("/login");
+    }, []);
+
+    // Auth guard — runs after mount (client-side only) to avoid SSR mismatch.
+    // Using a separate effect so Zustand's persist middleware has time to rehydrate.
+    useEffect(() => {
+        if (!mounted) return;
+        // isAuthenticated() reads from the already-rehydrated Zustand store
+        const authRaw = localStorage.getItem("repairdesk-auth");
+        if (!authRaw) {
+            router.replace("/login");
             return;
         }
         try {
-            const { state } = JSON.parse(raw);
+            const { state } = JSON.parse(authRaw);
             if (!state?.accessToken) {
                 localStorage.removeItem("repairdesk-auth");
-                router.push("/login");
+                router.replace("/login");
             }
         } catch {
-            router.push("/login");
+            router.replace("/login");
         }
-    }, []);
+    }, [mounted]);
 
 
     // Fetch shop status and onboarding info
@@ -650,6 +661,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
 
     const isSettingsActive = pathname.startsWith("/settings");
+    // Pick settings items based on user role for RBAC
+    const settingsItems = user?.role === "OWNER" ? settingsItemsOwner : settingsItemsTechnician;
 
     const SidebarContent = ({ onNavClick }: { onNavClick?: () => void }) => (
         <>

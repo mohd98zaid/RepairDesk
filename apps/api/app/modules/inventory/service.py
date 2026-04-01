@@ -380,9 +380,39 @@ async def get_purchase_order(
 async def create_purchase_order(
     shop_id: uuid.UUID, data: Any, db: AsyncSession
 ) -> Any:
-    from app.modules.inventory.models import PurchaseOrder, PurchaseOrderItem
+    from app.modules.inventory.models import PurchaseOrder, PurchaseOrderItem, Vendor
     from app.modules.inventory.schemas import PurchaseOrderCreate
-    
+
+    # --- Pre-flight: friendly errors before hitting DB constraints ---
+    vendor_check = await db.execute(
+        select(Vendor).where(Vendor.shop_id == shop_id).limit(1)
+    )
+    if not vendor_check.scalar_one_or_none():
+        raise ValidationException(
+            "No vendors found. Please add a vendor first before creating a Purchase Order."
+        )
+
+    if not data.items:
+        raise ValidationException(
+            "A Purchase Order must have at least one item. "
+            "Please add inventory items to your shop first, then select them here."
+        )
+
+    item_ids = [item.inventory_item_id for item in data.items]
+    from app.modules.inventory.models import InventoryItem
+    inv_check = await db.execute(
+        select(func.count()).where(
+            InventoryItem.id.in_(item_ids),
+            InventoryItem.shop_id == shop_id,
+            InventoryItem.is_deleted == False,
+        )
+    )
+    if inv_check.scalar_one() != len(item_ids):
+        raise ValidationException(
+            "One or more selected inventory items were not found. "
+            "Please ensure all items exist in your inventory before adding them to a Purchase Order."
+        )
+
     # Calculate amount
     total_amount = Decimal(0)
     for item in data.items:

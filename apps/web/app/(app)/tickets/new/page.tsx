@@ -6,14 +6,16 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Loader2, Phone, Smartphone, Wrench, Plus, Trash2, Receipt, PenTool, MessageCircle, CheckCircle } from "lucide-react";
+import { ArrowLeft, Loader2, Phone, Smartphone, Wrench, Plus, Trash2, Receipt, PenTool, MessageCircle, CheckCircle, UserCheck } from "lucide-react";
 import { ticketsApi } from "@/lib/api/tickets";
+import { teamApi } from "@/lib/api/team";
 import { getErrorMessage } from "@/lib/api/client";
 import { PreRepairChecklist, defaultChecklist, type ChecklistItem } from "@/components/tickets/PreRepairChecklist";
 import { SignaturePad } from "@/components/tickets/SignaturePad";
 import { api } from "@/lib/api/client";
 import { useEffect } from "react";
 import { buildNewTicketMessage, openWhatsApp, openSMS } from "@/lib/messaging";
+import { useAuthStore } from "@/store/authStore";
 
 const schema = z.object({
     customer_phone: z.string().min(5, "Enter customer phone number"),
@@ -57,10 +59,14 @@ interface CreatedTicket {
 
 export default function NewTicketPage() {
     const router = useRouter();
+    const { user } = useAuthStore();
+    const isOwner = user?.role === "OWNER";
     const [serverError, setServerError] = useState<string | null>(null);
     const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>(defaultChecklist);
     const [signature, setSignature] = useState<string | null>(null);
     const [createdTicket, setCreatedTicket] = useState<CreatedTicket | null>(null);
+    const [team, setTeam] = useState<{ id: string; full_name?: string; email: string }[]>([]);
+    const [assignedTo, setAssignedTo] = useState<string>("");
 
     const {
         register,
@@ -79,7 +85,11 @@ export default function NewTicketPage() {
                 router.push("/onboarding?from=tickets");
             }
         }).catch(() => {});
-    }, [router]);
+        // Load team members for technician assignment (Owners only)
+        if (isOwner) {
+            teamApi.list().then(setTeam).catch(() => {});
+        }
+    }, [router, isOwner]);
 
     const initialCharges = watch("initial_charges") || [];
 
@@ -110,6 +120,7 @@ export default function NewTicketPage() {
                 }, {} as Record<string, any>),
                 customer_signature: signature,
                 warranty_days: data.warranty_days ? parseInt(data.warranty_days, 10) : undefined,
+                assigned_to: assignedTo || undefined,
             });
             // Show notify modal instead of immediately redirecting
             setCreatedTicket({
@@ -278,6 +289,29 @@ export default function NewTicketPage() {
                         </div>
                     </div>
                 </div>
+
+                {/* Technician Assignment — Owners only */}
+                {isOwner && team.length > 0 && (
+                    <div className="glass rounded-xl p-5">
+                        <h2 className="text-sm font-semibold text-foreground/90 mb-4 flex items-center gap-2">
+                            <UserCheck className="w-4 h-4" /> Assign Technician
+                            <span className="text-muted-foreground font-normal">(optional)</span>
+                        </h2>
+                        <select
+                            value={assignedTo}
+                            onChange={(e) => setAssignedTo(e.target.value)}
+                            className="w-full px-4 py-2.5 rounded-lg bg-muted border border-border text-foreground focus:outline-none focus:border-indigo-500 transition text-sm"
+                            id="assigned-to"
+                        >
+                            <option value="">Unassigned</option>
+                            {team.map((member) => (
+                                <option key={member.id} value={member.id}>
+                                    {member.full_name || member.email}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                )}
 
                 {/* Device section */}
                 <div className="glass rounded-xl p-5">

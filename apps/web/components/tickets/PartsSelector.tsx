@@ -88,10 +88,10 @@ export function PartsSelector({
 
             {/* Parts List */}
             <div className="space-y-2 mb-4">
-                {ticket.parts.length === 0 ? (
+                {(ticket.parts?.length ?? 0) === 0 ? (
                     <p className="text-muted-foreground text-sm">No parts added yet.</p>
                 ) : (
-                    ticket.parts.map((p) => (
+                    (ticket.parts ?? []).map((p) => (
                         <div key={p.id} className="flex items-center justify-between p-2 rounded bg-muted border border-border">
                             <div>
                                 <p className="text-sm text-foreground">{p.name}</p>

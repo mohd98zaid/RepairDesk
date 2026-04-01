@@ -50,10 +50,18 @@ async def list_tickets(
         per_page=per_page,
         db=db,
     )
-    # The elements in result["items"] are Ticket models, so format them to strings where Pydantic strictly wants it if necessary, 
-    # but Pydantic handles Decimal conversions automatically, except for our specific format needs.
+    # Bulk-fetch user names for created_by IDs so the Activity Log can display real names
+    from sqlalchemy import select as sa_select
+    from app.modules.users.models import User
+    raw_items = result["items"]
+    user_ids = list({t.created_by for t in raw_items if t.created_by})
+    user_name_map: dict = {}
+    if user_ids:
+        users_res = await db.execute(sa_select(User.id, User.full_name).where(User.id.in_(user_ids)))
+        user_name_map = {row.id: row.full_name for row in users_res.all()}
+
     items = []
-    for t in result["items"]:
+    for t in raw_items:
         items.append({
             "id": str(t.id),
             "ticket_number": t.ticket_number,
@@ -66,6 +74,8 @@ async def list_tickets(
             "profit": str(t.profit) if t.profit is not None else None,
             "created_at": t.created_at,
             "updated_at": t.updated_at,
+            "created_by": str(t.created_by) if t.created_by else None,
+            "created_by_name": user_name_map.get(t.created_by, "Unknown"),
         })
     return {**result, "items": items}
 

@@ -31,7 +31,14 @@ async def list_customers(
         per_page=per_page,
         db=db,
     )
-    items = [CustomerResponse.model_validate(c).model_dump() for c in result["items"]]
+    items = []
+    for c in result["items"]:
+        d = CustomerResponse.model_validate(c).model_dump()
+        # model_validate only reads mapped columns; ticket_count/total_spent
+        # are set as transient instance attrs by the service — copy them explicitly.
+        d["ticket_count"] = getattr(c, "ticket_count", 0)
+        d["total_spent"] = getattr(c, "total_spent", "0.00")
+        items.append(d)
     return {**result, "items": items}
 
 

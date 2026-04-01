@@ -16,6 +16,10 @@ export interface Shop {
   name: string;
   phone: string | null;
   email: string | null;
+  address: string | null;
+  pincode: string | null;
+  gst_number: string | null;
+  logo_data: string | null;
   plan: Plan;
   is_active: boolean;
   created_at: string;

@@ -54,12 +54,14 @@ export default function ActivityLogPage() {
             // Build activity entries from ticket data
             const entries: LogEntry[] = [];
             for (const t of (ticketRes.data?.items || [])) {
+                // created_by_name is now populated by the backend with the real user name
+                const creatorName = t.created_by_name || t.created_by || "Unknown";
                 entries.push({
                     id: t.id + "_create",
                     action: "CREATE",
                     entity: "ticket",
                     entity_id: t.id,
-                    changed_by: t.created_by || "system",
+                    changed_by: creatorName,
                     changed_at: t.created_at,
                     notes: `Ticket RD-${String(t.ticket_number).padStart(5, "0")} created for ${t.device_type}`,
                 });
@@ -69,7 +71,8 @@ export default function ActivityLogPage() {
                         action: "STATUS_CHANGE",
                         entity: "ticket",
                         entity_id: t.id,
-                        changed_by: log.changed_by || "system",
+                        // changed_by from status_logs is already a full_name (resolved by backend)
+                        changed_by: log.changed_by || "Unknown",
                         changed_at: log.changed_at,
                         notes: `RD-${String(t.ticket_number).padStart(5, "0")}: ${(log.from_status || "NEW").replace(/_/g, " ")} → ${log.to_status.replace(/_/g, " ")}${log.notes ? ` — "${log.notes}"` : ""}`,
                     });

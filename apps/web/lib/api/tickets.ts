@@ -102,6 +102,10 @@ export const ticketsApi = {
     return data as { ok: boolean; customer_rating: number; customer_feedback: string | null };
   },
 
+  delete: async (id: string) => {
+    await api.delete(`/tickets/${id}`);
+  },
+
   getPublicInfo: async (id: string) => {
     // Public endpoint — use a plain fetch so no auth header is sent
     const baseUrl = typeof window !== "undefined"
@@ -114,6 +118,13 @@ export const ticketsApi = {
       device_model: string | null; status: string;
       customer_rating: number | null; customer_feedback: string | null;
     }>;
+  },
+};
+
+export const shopsApi = {
+  getMyShop: async () => {
+    const { data } = await api.get("/shops/me");
+    return data as import("@/types").Shop;
   },
 };
 
