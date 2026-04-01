@@ -318,7 +318,7 @@ function ImpersonationBanner() {
 }
 
 // ── Broadcast Notification Banner ─────────────────────────────
-interface Broadcast { id: string; title: string; message: string; type: string; }
+interface Broadcast { id: string; title: string; message: string; type: string; duration_minutes?: number | null; created_at?: string; }
 
 const TYPE_STYLES: Record<string, { bg: string; border: string; color: string }> = {
     INFO: { bg: 'rgba(96,165,250,0.1)', border: 'rgba(96,165,250,0.3)', color: '#60a5fa' },
@@ -346,7 +346,25 @@ function BroadcastBanner() {
         return () => clearInterval(interval);
     }, []);
 
-    const visible = broadcasts.filter(b => !dismissed.has(b.id));
+    const now = Date.now();
+    const visible = broadcasts.filter(b => {
+        if (dismissed.has(b.id)) return false;
+        if (b.duration_minutes && b.duration_minutes > 0 && b.created_at) {
+            const created = new Date(b.created_at).getTime();
+            const expiresAt = created + b.duration_minutes * 60 * 1000;
+            if (now >= expiresAt) return false;
+        }
+        return true;
+    });
+
+    const [, forceUpdate] = useState(0);
+    useEffect(() => {
+        const hasTimed = broadcasts.some(b => b.duration_minutes && b.duration_minutes > 0);
+        if (!hasTimed) return;
+        const timer = setInterval(() => forceUpdate(v => v + 1), 30_000);
+        return () => clearInterval(timer);
+    }, [broadcasts]);
+
     if (visible.length === 0) return null;
 
     return (
@@ -728,9 +746,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </aside>
 
             {/* Mobile top bar */}
-            <div className="md:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-3 bg-card/90 backdrop-blur-md border-b border-border">
+            <div className="md:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-2 bg-card/90 backdrop-blur-md border-b border-border">
                 <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold gradient-text">RepairDeskz</span>
+                    <div className="bg-white rounded w-[110px] h-7 flex items-center justify-center overflow-hidden shadow-sm p-1">
+                        <img src="/logo.png" alt="RepairDeskz" className="w-full h-auto object-contain scale-[1.35]" />
+                    </div>
                 </div>
                 <div className="flex items-center gap-1">
                     <OfflineSyncManager />

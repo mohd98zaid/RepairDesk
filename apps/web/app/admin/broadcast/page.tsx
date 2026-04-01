@@ -2,8 +2,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminNav from '@/components/admin/AdminNav';
-import { createBroadcast, listBroadcasts, type BroadcastEntry } from '@/lib/admin-api';
-import { Megaphone, Send, AlertTriangle, Info, Wrench, X, Loader2 } from 'lucide-react';
+import { createBroadcast, listBroadcasts, deleteBroadcast, type BroadcastEntry } from '@/lib/admin-api';
+import { Megaphone, Send, AlertTriangle, Info, Wrench, X, Loader2, Trash2, Clock } from 'lucide-react';
 
 const TYPE_CONFIG = {
     INFO: { label: 'Info', icon: Info, color: '#60a5fa', bg: 'rgba(96,165,250,0.15)' },
@@ -20,6 +20,9 @@ export default function BroadcastPage() {
     const [sending, setSending] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
+    const [durationHours, setDurationHours] = useState('');
+    const [durationMinutes, setDurationMinutes] = useState('');
+    const [deleting, setDeleting] = useState<string | null>(null);
 
     useEffect(() => {
         if (!localStorage.getItem('adminToken')) { router.push('/admin/login'); return; }
@@ -34,14 +37,28 @@ export default function BroadcastPage() {
         if (!title.trim() || !message.trim()) return;
         setSending(true); setError(null); setSuccess(false);
         try {
-            await createBroadcast(title, message, type);
+            const h = parseInt(durationHours) || 0;
+            const m = parseInt(durationMinutes) || 0;
+            const totalMinutes = h * 60 + m;
+            await createBroadcast(title, message, type, totalMinutes > 0 ? totalMinutes : null);
             setSuccess(true);
-            setTitle(''); setMessage(''); setType('INFO');
+            setTitle(''); setMessage(''); setType('INFO'); setDurationHours(''); setDurationMinutes('');
             await load();
             setTimeout(() => setSuccess(false), 3000);
         } catch (e: any) {
             setError(e?.response?.data?.detail || 'Failed to send broadcast.');
         } finally { setSending(false); }
+    }
+
+    async function handleDelete(id: string) {
+        if (!confirm('Are you sure you want to delete this broadcast?')) return;
+        setDeleting(id);
+        try {
+            await deleteBroadcast(id);
+            await load();
+        } catch (e: any) {
+            setError(e?.response?.data?.detail || 'Failed to delete broadcast.');
+        } finally { setDeleting(null); }
     }
 
     function fmt(ts: string) {
@@ -92,6 +109,24 @@ export default function BroadcastPage() {
                         <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder="Write your message to all shop owners…" rows={5}
                             style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 14px', color: '#e2e8f0', fontSize: 14, outline: 'none', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }}
                         />
+
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b', marginBottom: 6, marginTop: 12 }}>
+                            <Clock size={13} /> Display Duration <span style={{ color: '#475569' }}>(optional — leave empty for permanent)</span>
+                        </label>
+                        <div style={{ display: 'flex', gap: 10 }}>
+                            <div style={{ flex: 1 }}>
+                                <input type="number" min="0" value={durationHours} onChange={e => setDurationHours(e.target.value)} placeholder="0"
+                                    style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 14px', color: '#e2e8f0', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                                />
+                                <span style={{ fontSize: 11, color: '#475569', marginTop: 4, display: 'block' }}>Hours</span>
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <input type="number" min="0" max="59" value={durationMinutes} onChange={e => setDurationMinutes(e.target.value)} placeholder="0"
+                                    style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 14px', color: '#e2e8f0', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                                />
+                                <span style={{ fontSize: 11, color: '#475569', marginTop: 4, display: 'block' }}>Minutes</span>
+                            </div>
+                        </div>
                         <button onClick={send} disabled={!title.trim() || !message.trim() || sending}
                             style={{ marginTop: 16, width: '100%', background: 'linear-gradient(135deg, #7c3aed, #6d28d9)', color: '#fff', border: 'none', borderRadius: 10, padding: '12px', fontSize: 14, fontWeight: 600, cursor: (!title.trim() || !message.trim() || sending) ? 'not-allowed' : 'pointer', opacity: (!title.trim() || !message.trim()) ? 0.5 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                             {sending ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Sending…</> : <><Send size={15} /> Send to All Shops</>}
@@ -118,10 +153,22 @@ export default function BroadcastPage() {
                                                 <Icon size={14} style={{ color: cfg.color }} />
                                                 <span style={{ fontSize: 12, fontWeight: 700, color: cfg.color }}>{cfg.label}</span>
                                                 <span style={{ marginLeft: 'auto', fontSize: 11, color: '#475569' }}>{fmt(b.created_at)}</span>
+                                                <button onClick={() => handleDelete(b.id)} disabled={deleting === b.id}
+                                                    title="Delete broadcast"
+                                                    style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171', borderRadius: 6, padding: '4px 8px', cursor: deleting === b.id ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, opacity: deleting === b.id ? 0.5 : 1 }}>
+                                                    {deleting === b.id ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Trash2 size={12} />}
+                                                </button>
                                             </div>
                                             <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#e2e8f0', fontSize: 14 }}>{b.title}</p>
                                             <p style={{ margin: 0, color: '#94a3b8', fontSize: 13, lineHeight: 1.5 }}>{b.message}</p>
-                                            <p style={{ margin: '8px 0 0', fontSize: 11, color: '#475569' }}>Sent by {b.sent_by}</p>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+                                                <p style={{ margin: 0, fontSize: 11, color: '#475569' }}>Sent by {b.sent_by}</p>
+                                                {b.duration_minutes != null && b.duration_minutes > 0 && (
+                                                    <span style={{ fontSize: 11, color: '#475569', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                        <Clock size={11} /> {b.duration_minutes >= 60 ? `${Math.floor(b.duration_minutes / 60)}h ${b.duration_minutes % 60}m` : `${b.duration_minutes}m`}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     );
                                 })}

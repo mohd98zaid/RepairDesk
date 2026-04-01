@@ -165,14 +165,18 @@ export async function globalSearch(q: string) {
   return res.data as { query: string; results: SearchResult[]; counts: Record<string, number> };
 }
 
-export async function createBroadcast(title: string, message: string, type = 'INFO') {
-  const res = await adminAxios.post('/broadcast', { title, message, type });
+export async function createBroadcast(title: string, message: string, type = 'INFO', durationMinutes?: number | null) {
+  const res = await adminAxios.post('/broadcast', { title, message, type, duration_minutes: durationMinutes ?? null });
   return res.data as BroadcastEntry;
 }
 
 export async function listBroadcasts() {
   const res = await adminAxios.get('/broadcasts');
   return res.data as BroadcastEntry[];
+}
+
+export async function deleteBroadcast(id: string) {
+  await adminAxios.delete(`/broadcasts/${id}`);
 }
 
 export async function bulkShopAction(shopIds: string[], action: string) {
@@ -253,7 +257,7 @@ export interface SearchResult {
 }
 
 export interface BroadcastEntry {
-  id: string; title: string; message: string; type: string; sent_by: string; created_at: string;
+  id: string; title: string; message: string; type: string; sent_by: string; created_at: string; duration_minutes: number | null;
 }
 
 export interface SessionEntry {

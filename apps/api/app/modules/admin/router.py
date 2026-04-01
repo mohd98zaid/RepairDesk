@@ -391,6 +391,15 @@ async def create_broadcast(
     if not title or not message:
         raise HTTPException(status_code=422, detail="title and message are required.")
 
+    duration_minutes = body.get("duration_minutes")
+    if duration_minutes is not None:
+        try:
+            duration_minutes = int(duration_minutes)
+            if duration_minutes < 0:
+                duration_minutes = None
+        except (ValueError, TypeError):
+            duration_minutes = None
+
     entry = {
         "id": str(uuid.uuid4()),
         "title": title,
@@ -398,6 +407,7 @@ async def create_broadcast(
         "type": body.get("type", "INFO"),   # INFO | WARNING | MAINTENANCE
         "sent_by": admin.get("email", "admin"),
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "duration_minutes": duration_minutes,
     }
     r = await get_redis()
     await r.lpush("admin:broadcasts", _json.dumps(entry))
@@ -408,12 +418,29 @@ async def create_broadcast(
 
 @router.get("/broadcasts/latest")
 async def get_latest_broadcasts() -> list[dict]:
-    """Return latest 10 broadcasts. Public endpoint — no admin auth required."""
+    """Return latest 10 active (non-expired) broadcasts. Public endpoint — no admin auth required."""
     from app.core.redis import get_redis
     import json as _json
     r = await get_redis()
-    raw = await r.lrange("admin:broadcasts", 0, 9)
-    return [_json.loads(b) for b in raw]
+    raw = await r.lrange("admin:broadcasts", 0, -1)
+    all_broadcasts = [_json.loads(b) for b in raw]
+    now = datetime.now(timezone.utc)
+    active = []
+    for b in all_broadcasts:
+        dm = b.get("duration_minutes")
+        if dm is None or dm == 0:
+            active.append(b)
+            continue
+        try:
+            created = datetime.fromisoformat(b["created_at"])
+            expires_at = created + timedelta(minutes=int(dm))
+            if now < expires_at:
+                active.append(b)
+        except (KeyError, ValueError, TypeError):
+            active.append(b)
+        if len(active) >= 10:
+            break
+    return active
 
 
 @router.get("/broadcasts")
@@ -424,6 +451,28 @@ async def list_broadcasts(admin: dict = AdminUser) -> list[dict]:
     r = await get_redis()
     raw = await r.lrange("admin:broadcasts", 0, -1)
     return [_json.loads(b) for b in raw]
+
+
+@router.delete("/broadcasts/{broadcast_id}", status_code=204)
+async def delete_broadcast(
+    broadcast_id: str,
+    admin: dict = AdminUser,
+) -> None:
+    """Delete a specific broadcast by ID."""
+    from app.core.redis import get_redis
+    import json as _json
+    r = await get_redis()
+    raw = await r.lrange("admin:broadcasts", 0, -1)
+    found = False
+    for entry_raw in raw:
+        entry = _json.loads(entry_raw)
+        if entry.get("id") == broadcast_id:
+            await r.lrem("admin:broadcasts", 0, entry_raw)
+            found = True
+            break
+    if not found:
+        raise HTTPException(status_code=404, detail="Broadcast not found.")
+    await _emit_audit("DELETE_BROADCAST", admin.get("email", "admin"), broadcast_id, f"Deleted broadcast")
 
 
 # ─────────────────────────── CSV Export ───────────────────────────
