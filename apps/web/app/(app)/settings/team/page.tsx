@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
     Users, Mail, UserX, UserPlus, Crown,
-    Wrench, Loader2, X, CheckCircle, AlertTriangle
+    Wrench, Loader2, X, CheckCircle, AlertTriangle, Trash2
 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { useAuthStore } from "@/store/authStore";
@@ -38,16 +38,22 @@ function RoleBadge({ role }: { role: string }) {
 // Invite Modal
 function InviteModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
     const [email, setEmail] = useState("");
+    const [fullName, setFullName] = useState("");
+    const [role, setRole] = useState<"TECHNICIAN" | "OWNER">("TECHNICIAN");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
 
     const handleInvite = async () => {
-        if (!email.trim()) return;
+        if (!email.trim() || !fullName.trim()) return;
         setLoading(true);
         setError(null);
         try {
-            await api.post("/team/invite", { email: email.trim() });
+            await api.post("/team/invite", { 
+                email: email.trim(), 
+                full_name: fullName.trim(),
+                role: role 
+            });
             setSuccess(true);
             setTimeout(() => { onSuccess(); onClose(); }, 1500);
         } catch (e: unknown) {
@@ -62,7 +68,7 @@ function InviteModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
             <div className="bg-card border border-border shadow-md rounded-2xl p-6 w-full max-w-sm">
                 <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-foreground">Invite Technician</h2>
+                    <h2 className="text-lg font-semibold text-foreground">Invite Team Member</h2>
                     <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
                 </div>
                 {success ? (
@@ -71,32 +77,58 @@ function InviteModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
                         <p className="text-sm font-medium">Invite sent!</p>
                     </div>
                 ) : (
-                    <>
+                    <div>
                         {error && (
                             <div className="mb-3 p-2 rounded-lg bg-danger/10 border border-danger/20 text-danger text-xs">{error}</div>
                         )}
-                        <label className="block text-xs font-medium text-muted-foreground mb-1">Email address</label>
-                        <input
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && handleInvite()}
-                            placeholder="tech@yourshop.com"
-                            autoFocus
-                            className="w-full px-3 py-2.5 rounded-lg bg-card border border-border text-foreground placeholder-muted-foreground text-sm focus:outline-none focus:border-primary shadow-sm mb-4 transition"
-                        />
-                        <div className="flex gap-3">
-                            <button onClick={onClose} className="flex-1 py-2 rounded-lg bg-muted border border-border shadow-sm text-foreground text-sm hover:bg-muted/80 transition">Cancel</button>
-                            <button
-                                onClick={handleInvite}
-                                disabled={loading || !email.trim()}
-                                className="flex-1 py-2 rounded-lg gradient-primary text-white text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
-                            >
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                                Send Invite
-                            </button>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-medium text-muted-foreground mb-1">Full name</label>
+                                <input
+                                    type="text"
+                                    value={fullName}
+                                    onChange={(e) => setFullName(e.target.value)}
+                                    onKeyDown={(e) => e.key === "Enter" && handleInvite()}
+                                    placeholder="John Doe"
+                                    autoFocus
+                                    className="w-full px-3 py-2.5 rounded-lg bg-card border border-border text-foreground placeholder-muted-foreground text-sm focus:outline-none focus:border-primary shadow-sm mb-4 transition"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-muted-foreground mb-1">Email address</label>
+                                <input
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    onKeyDown={(e) => e.key === "Enter" && handleInvite()}
+                                    placeholder="tech@yourshop.com"
+                                    className="w-full px-3 py-2.5 rounded-lg bg-card border border-border text-foreground placeholder-muted-foreground text-sm focus:outline-none focus:border-primary shadow-sm mb-4 transition"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-muted-foreground mb-1">Role</label>
+                                <select
+                                    value={role}
+                                    onChange={(e) => setRole(e.target.value as "TECHNICIAN" | "OWNER")}
+                                    className="w-full px-3 py-2.5 rounded-lg bg-card border border-border text-foreground placeholder-muted-foreground text-sm focus:outline-none focus:border-primary shadow-sm"
+                                >
+                                    <option value="TECHNICIAN">Technician</option>
+                                    <option value="OWNER">Owner</option>
+                                </select>
+                            </div>
+                            <div className="flex gap-3">
+                                <button onClick={onClose} className="flex-1 py-2 rounded-lg bg-muted border border-border shadow-sm text-foreground text-sm hover:bg-muted/80 transition">Cancel</button>
+                                <button
+                                    onClick={handleInvite}
+                                    disabled={loading || !email.trim() || !fullName.trim()}
+                                    className="flex-1 py-2 rounded-lg gradient-primary text-white text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                                >
+                                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                                    Send Invite
+                                </button>
+                            </div>
                         </div>
-                    </>
+                    </div>
                 )}
             </div>
         </div>
@@ -132,6 +164,26 @@ export default function TeamPage() {
             await load();
         } finally {
             setDeactivating(null);
+        }
+    };
+
+    const handleReactivate = async (memberId: string) => {
+        if (!confirm("Reactivate this team member?")) return;
+        try {
+            await api.patch(`/team/${memberId}/reactivate`);
+            await load();
+        } catch (e: unknown) {
+            alert("Failed to reactivate member");
+        }
+    };
+
+    const handleDelete = async (memberId: string) => {
+        if (!confirm("Delete this team member permanently? This action cannot be undone.")) return;
+        try {
+            await api.delete(`/team/${memberId}/delete`);
+            await load();
+        } catch (e: unknown) {
+            alert("Failed to delete member");
         }
     };
 
@@ -217,25 +269,46 @@ export default function TeamPage() {
                     </div>
 
                     {/* Inactive members */}
-                    {inactiveMembers.length > 0 && (
-                        <div>
-                            <p className="text-muted-foreground opacity-80 text-xs uppercase tracking-wide font-semibold mb-2 px-1">Inactive</p>
-                            <div className="bg-card border border-border shadow-sm rounded-xl overflow-hidden opacity-80">
-                                {inactiveMembers.map((member) => (
-                                    <div key={member.id} className="flex items-center gap-4 px-5 py-3 border-b border-border last:border-0 hover:bg-muted/30 transition">
-                                        <div className="w-9 h-9 rounded-full bg-muted border border-border flex items-center justify-center flex-shrink-0">
-                                            <span className="text-muted-foreground text-sm">{member.full_name.charAt(0)}</span>
-                                        </div>
-                                        <div className="flex-1">
-                                            <p className="text-muted-foreground text-sm line-through">{member.full_name}</p>
-                                            <p className="text-muted-foreground opacity-80 text-xs">{member.email}</p>
-                                        </div>
-                                        <span className="text-xs text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-full">Inactive</span>
-                                    </div>
-                                ))}
-                            </div>
+{inactiveMembers.length > 0 && (
+        <div>
+            <p className="text-muted-foreground opacity-80 text-xs uppercase tracking-wide font-semibold mb-2 px-1">Inactive</p>
+            <div className="bg-card border border-border shadow-sm rounded-xl overflow-hidden opacity-80">
+                {inactiveMembers.map((member) => (
+                    <div key={member.id} className="flex items-center gap-4 px-5 py-3 border-b border-border last:border-0 hover:bg-muted/30 transition">
+                        <div className="w-9 h-9 rounded-full bg-muted border border-border flex items-center justify-center flex-shrink-0">
+                            <span className="text-muted-foreground text-sm">{member.full_name.charAt(0)}</span>
                         </div>
-                    )}
+                        <div className="flex-1">
+                            <p className="text-muted-foreground text-sm line-through">{member.full_name}</p>
+                            <p className="text-muted-foreground opacity-80 text-xs">{member.email}</p>
+                        </div>
+                        {/* Action buttons */}
+                        {isOwner && member.role !== "OWNER" && (
+                            <div className="flex gap-2">
+                                {/* Reactivate button */}
+                                <button
+                                    onClick={() => handleReactivate(member.id)}
+                                    className="p-2 rounded-lg text-success hover:bg-success/20 transition"
+                                    title="Reactivate member"
+                                >
+                                    <CheckCircle className="w-4 h-4" />
+                                </button>
+                                {/* Delete button */}
+                                <button
+                                    onClick={() => handleDelete(member.id)}
+                                    className="p-2 rounded-lg text-destructive hover:bg-destructive/20 transition"
+                                    title="Delete member permanently"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                            </div>
+                        )}
+                        <span className="text-xs text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-full">Inactive</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    )}
                 </>
             )}
 

@@ -4,10 +4,9 @@ import type { AuthUser } from "@/types";
 
 interface AuthState {
     user: AuthUser | null;
+    /** @deprecated Access token is now httpOnly cookie — never stored client-side */
     accessToken: string | null;
-    refreshToken: string | null;
-    setAuth: (user: AuthUser, token: string, refreshToken?: string) => void;
-    setToken: (token: string) => void;
+    setAuth: (user: AuthUser) => void;
     setUser: (user: AuthUser) => void;
     clearAuth: () => void;
     isAuthenticated: () => boolean;
@@ -18,27 +17,62 @@ export const useAuthStore = create<AuthState>()(
         (set: any, get: any): AuthState => ({
             user: null,
             accessToken: null,
-            refreshToken: null,
 
-            setAuth: (user: AuthUser, accessToken: string, refreshToken?: string) =>
-                set({ user, accessToken, refreshToken: refreshToken ?? get().refreshToken }),
-
-            setToken: (accessToken: string) => set({ accessToken }),
+            setAuth: (user: AuthUser) =>
+                set({ user, accessToken: null }),
 
             setUser: (user: AuthUser) => set({ user }),
 
-            clearAuth: () => set({ user: null, accessToken: null, refreshToken: null }),
+            clearAuth: () => set({ user: null, accessToken: null }),
 
-            isAuthenticated: () => !!get().accessToken && !!get().user,
+            isAuthenticated: () => !!get().user,
         }),
         {
             name: "repairdesk-auth",
             storage: createJSONStorage(() => localStorage),
+            version: 2,
+            migrate: (persisted: unknown, version: number) => {
+                // v0/v1 had refreshToken and accessToken — strip them
+                const p = persisted as Record<string, unknown>;
+                if (version < 2 && p && typeof p === "object" && "state" in p) {
+                    const state = p.state as Record<string, unknown>;
+                    if (state) {
+                        delete state.refreshToken;
+                        delete state.accessToken;
+                    }
+                    // Ensure we return a proper AuthState object
+                    return {
+                        user: state.user ?? null,
+                        accessToken: null,
+                        setAuth: (user: AuthUser) => {},
+                        setUser: (user: AuthUser) => {},
+                        clearAuth: () => {},
+                        isAuthenticated: () => false,
+                    } as AuthState;
+                }
+                // Return default state if no migration needed
+                return {
+                    user: null,
+                    accessToken: null,
+                    setAuth: (user: AuthUser) => {},
+                    setUser: (user: AuthUser) => {},
+                    clearAuth: () => {},
+                    isAuthenticated: () => false,
+                } as AuthState;
+            },
             partialize: (state: AuthState) => ({
                 user: state.user,
-                accessToken: state.accessToken,
-                refreshToken: state.refreshToken,
+                // NO tokens stored — access token is in httpOnly cookie only
             }) as AuthState,
+            // Skip rehydration if localStorage data is corrupted
+            onRehydrateStorage: () => {
+                return (state, error) => {
+                    if (error) {
+                        console.error("Auth store rehydration failed:", error);
+                        localStorage.removeItem("repairdesk-auth");
+                    }
+                };
+            },
         }
     )
 );
