@@ -40,14 +40,13 @@ export const useAuthStore = create<AuthState>()(
                         delete state.refreshToken;
                         delete state.accessToken;
                     }
-                    // Ensure we return a proper AuthState object
+                    // Ensure we return a proper AuthState object with all required fields
                     return {
-                        user: state.user ?? null,
-                        accessToken: null,
+                        ...state,
                         setAuth: (user: AuthUser) => {},
                         setUser: (user: AuthUser) => {},
                         clearAuth: () => {},
-                        isAuthenticated: () => false,
+                        isAuthenticated: () => !!state.user,
                     } as AuthState;
                 }
                 // Return default state if no migration needed
