@@ -558,11 +558,9 @@ function useSessionHeartbeat(onEvicted: () => void) {
             } catch { return; }
 
             try {
-                // Tokens are in httpOnly cookies — just send with credentials
-                const res = await fetch(`${API_URL}/auth/refresh`, {
-                    method: 'POST',
+                const res = await fetch(`${API_URL}/auth/session-status`, {
+                    method: 'GET',
                     credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
                 });
                 if (res.status === 401) {
                     if (!destroyed) onEvictedRef.current();
@@ -573,7 +571,6 @@ function useSessionHeartbeat(onEvicted: () => void) {
         }
 
         const interval = setInterval(heartbeat, HEARTBEAT_INTERVAL_MS);
-        const warmup = setTimeout(heartbeat, HEARTBEAT_WARMUP_MS);
 
         // Also listen for session-kill BroadcastChannel messages (cross-tab)
         let bc: BroadcastChannel | null = null;

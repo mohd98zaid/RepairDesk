@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Cookie, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.exceptions import UnauthorizedException
 
 from app.core.config import settings
 from app.core.db import get_db
@@ -143,6 +144,27 @@ async def refresh(
 
     result = await service.refresh_access_token(repairdesk_refresh, db)
     _set_auth_cookies(response, result["access_token"], result["refresh_token"])
+
+    return {"ok": True}
+
+
+@router.get("/session-status", status_code=200)
+async def check_session_status(current_user: CurrentUser):
+    """
+    Check if the remote session is still alive in Redis (for instant termination checks).
+    Returns 200 OK if active, raises 401 if evicted.
+    """
+    from app.core.redis import get_redis
+    user_id = str(current_user["user_id"])
+    session_id = current_user.get("session_id")
+
+    if not session_id:
+        return {"ok": True}
+
+    redis = await get_redis()
+    exists = await redis.exists(f"refresh:{user_id}:{session_id}")
+    if not exists:
+        raise UnauthorizedException("Session has been terminated.")
 
     return {"ok": True}
 
