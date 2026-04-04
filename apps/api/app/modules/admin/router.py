@@ -119,7 +119,7 @@ async def run_migrations_endpoint(
 # ─────────────────────────── Login ───────────────────────────
 
 ADMIN_COOKIE_NAME = "repairdesk_admin"
-_ADMIN_COOKIE_SECURE = settings.is_production
+_ADMIN_COOKIE_SECURE = True
 
 @router.post("/auth/login")
 @limiter.limit("5/minute")

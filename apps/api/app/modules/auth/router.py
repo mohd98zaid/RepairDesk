@@ -28,9 +28,8 @@ REFRESH_COOKIE_NAME = "repairdesk_refresh"
 REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
 ACCESS_COOKIE_MAX_AGE = 60 * 15  # 15 minutes
 
-# In dev (HTTP localhost), secure=True causes browsers to reject cookies.
-# In production (HTTPS), secure=True is required.
-_COOKIE_SECURE = settings.is_production
+# Always enable secure cookies for cross-origin frontend (Vercel) support
+_COOKIE_SECURE = True
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
