@@ -1,17 +1,23 @@
 import secrets
 import uuid
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.core.dependencies import CurrentUser, DbSession, OwnerUser
-from app.core.exceptions import ForbiddenException, NotFoundException
+from app.core.exceptions import ForbiddenException, NotFoundException, ValidationException
 from app.core.security import hash_password, verify_password
 from app.modules.users.models import Invitation, User
+
 users_router = APIRouter(prefix="/users", tags=["Users"])
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+limiter = Limiter(key_func=get_remote_address)
 
 
 class UserMeUpdate(BaseModel):
@@ -39,7 +45,8 @@ async def update_me(data: UserMeUpdate, current_user: CurrentUser, db: DbSession
 
 
 @users_router.post("/me/change-password")
-async def change_my_password(data: ChangePasswordRequest, current_user: CurrentUser, db: DbSession):
+@limiter.limit("5/minute")
+async def change_my_password(request: Request, data: ChangePasswordRequest, current_user: CurrentUser, db: DbSession):
     """Change own password after verifying the current password."""
     result = await db.execute(select(User).where(User.id == current_user["user_id"]))
     user = result.scalar_one_or_none()
@@ -49,9 +56,13 @@ async def change_my_password(data: ChangePasswordRequest, current_user: CurrentU
     if not verify_password(data.current_password, user.password_hash):
         raise ForbiddenException("Current password is incorrect.")
 
-    if len(data.new_password) < 6:
-        from app.core.exceptions import ValidationException
-        raise ValidationException("Password must be at least 6 characters.")
+    # Stronger password validation: min 8 chars, must have uppercase + number
+    if len(data.new_password) < 8:
+        raise ValidationException("Password must be at least 8 characters.")
+    if not re.search(r"[A-Z]", data.new_password):
+        raise ValidationException("Password must contain at least one uppercase letter.")
+    if not re.search(r"[0-9]", data.new_password):
+        raise ValidationException("Password must contain at least one number.")
 
     user.password_hash = hash_password(data.new_password)
     await db.flush()

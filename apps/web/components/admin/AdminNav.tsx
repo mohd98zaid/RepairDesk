@@ -6,7 +6,7 @@ import {
     LayoutDashboard, Store, LogOut, ShieldCheck, TrendingUp,
     ClipboardList, Megaphone, Search, X, Loader2, CreditCard, Menu
 } from 'lucide-react';
-import { globalSearch, impersonateShop, type SearchResult } from '@/lib/admin-api';
+import { globalSearch, impersonateShop, adminLogout, type SearchResult } from '@/lib/admin-api';
 
 const links = [
     { href: '/admin/dashboard', label: 'Shops',    icon: LayoutDashboard },
@@ -29,8 +29,8 @@ export default function AdminNav() {
     const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    function handleLogout() {
-        localStorage.removeItem('adminToken');
+    async function handleLogout() {
+        try { await adminLogout(); } catch { /* ignore */ }
         window.location.href = '/admin/login';
     }
 
@@ -55,7 +55,9 @@ export default function AdminNav() {
             sessionStorage.setItem('impersonationToken', data.access_token);
             sessionStorage.setItem('impersonationShop', data.shop_name);
             sessionStorage.setItem('impersonationEmail', data.owner_email);
-            window.open(`http://localhost:3000/impersonate?token=${data.access_token}&shop=${encodeURIComponent(data.shop_name)}`, '_blank');
+            // Use the frontend URL from env — not hardcoded localhost
+            const frontendBase = process.env.NEXT_PUBLIC_FRONTEND_URL || window.location.origin;
+            window.open(`${frontendBase}/impersonate?token=${data.access_token}&shop=${encodeURIComponent(data.shop_name)}`, '_blank');
             setOpen(false); setQ('');
         } catch (e: any) {
             alert(e?.response?.data?.detail || 'Impersonation failed.');
@@ -126,13 +128,6 @@ export default function AdminNav() {
                             <Icon size={18} />{label}
                         </Link>
                     ))}
-                    <a href={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '')}/api/v1/sqladmin`} target="_blank" rel="noopener noreferrer" className="admin-nav__link">
-                        <Store size={18} />Database Viewer
-                    </a>
-                    <a href={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '')}/docs`} target="_blank" rel="noopener noreferrer" className="admin-nav__link">
-                        <svg xmlns="http://www.w3.org/2000/svg" width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
-                        FastAPI Docs
-                    </a>
                 </nav>
 
                 <button className="admin-nav__logout" onClick={handleLogout}>

@@ -47,8 +47,6 @@ export default function AdminShopPage() {
     const [quotaMsg, setQuotaMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
     useEffect(() => {
-        const token = localStorage.getItem('adminToken');
-        if (!token) { router.push('/admin/login'); return; }
         loadShop();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);

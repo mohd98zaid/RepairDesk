@@ -2,21 +2,32 @@ import axios from 'axios';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
-const adminAxios = axios.create({ baseURL: `${API_BASE}/admin` });
-
-// Attach admin token to every request
-adminAxios.interceptors.request.use((config) => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('adminToken');
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
+const adminAxios = axios.create({
+  baseURL: `${API_BASE}/admin`,
+  withCredentials: true, // CRITICAL: send httpOnly admin cookie
 });
+
+// Redirect to admin login on 401 (session expired)
+adminAxios.interceptors.response.use(
+  (res) => res,
+  (error) => {
+    if (error.response?.status === 401 && typeof window !== 'undefined') {
+      window.location.href = '/admin/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+// No interceptor needed — admin token is in httpOnly cookie, sent automatically
 
 // ─── Auth ───
 export async function adminLogin(email: string, password: string) {
   const res = await adminAxios.post('/auth/login', { email, password });
-  return res.data as { access_token: string; user: { email: string; role: string } };
+  return res.data as { user: { email: string; role: string } };
+}
+
+export async function adminLogout() {
+  await adminAxios.post('/auth/logout');
 }
 
 export async function getAdminMe() {
@@ -273,14 +284,11 @@ export interface SessionEntry {
 }
 
 // ─── Billing ───
-const billingAxios = axios.create({ baseURL: `${API_BASE}/billing` });
-billingAxios.interceptors.request.use((config) => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('adminToken');
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
+const billingAxios = axios.create({
+  baseURL: `${API_BASE}/billing`,
+  withCredentials: true, // CRITICAL: send httpOnly admin cookie
 });
+// No interceptor needed — admin token is in httpOnly cookie, sent automatically
 
 export async function listPlans() {
   const res = await billingAxios.get('/admin/plans');

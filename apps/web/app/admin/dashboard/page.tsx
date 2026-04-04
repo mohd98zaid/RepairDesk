@@ -29,8 +29,6 @@ export default function AdminDashboard() {
     const PER_PAGE = 12;
 
     useEffect(() => {
-        const token = localStorage.getItem('adminToken');
-        if (!token) { router.push('/admin/login'); return; }
         load();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, search]);

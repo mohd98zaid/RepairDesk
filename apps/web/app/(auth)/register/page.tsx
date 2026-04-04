@@ -136,8 +136,8 @@ export default function RegisterPage() {
                 verified_token: verifiedToken,
             };
             const res = await api.post("/auth/register", payload);
-            const { access_token, refresh_token, user } = res.data;
-            setAuth(user as AuthUser, access_token, refresh_token);
+            const { user } = res.data;
+            setAuth(user as AuthUser);
             router.push("/onboarding");
         } catch (err: unknown) {
             setServerError(getErrorMessage(err, "Registration failed. Please try again."));

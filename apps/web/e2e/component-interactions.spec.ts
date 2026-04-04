@@ -5,7 +5,7 @@ test.describe('Component Interactions', () => {
     test.beforeEach(async ({ page }) => {
         // Mock Auth
         await page.addInitScript(() => {
-            localStorage.setItem('repairdesk-auth', JSON.stringify({ state: { accessToken: 'fake' } }));
+            localStorage.setItem('repairdesk-auth', JSON.stringify({ state: { user: { id: 'test', email: 'test@test.com', role: 'OWNER', shop_id: 'shop1' } } }));
         });
 
         // Mock shop

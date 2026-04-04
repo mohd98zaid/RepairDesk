@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.core.dependencies import CurrentUser, DbSession, OwnerUser
 from app.modules.tickets import service
@@ -22,6 +22,10 @@ from app.modules.tickets.schemas import (
     RatingSubmit,
     RatingResponse,
 )
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
 
@@ -273,12 +277,19 @@ async def remove_ticket_charge(
 # ── Public (no-auth) feedback endpoints ─────────────────────────────────────
 
 @router.get("/{ticket_id}/public-info", response_model=PublicTicketInfo)
-async def get_ticket_public_info(ticket_id: uuid.UUID, db: DbSession):
-    """Return minimal info about a ticket for the public feedback page (no auth required)."""
+@limiter.limit("30/minute")
+async def get_ticket_public_info(request: Request, ticket_id: uuid.UUID, db: DbSession):
+    """Return minimal info about a ticket for the public feedback page (no auth required).
+    Only returns tickets that are DELIVERED or READY — prevents enumeration of in-progress work.
+    """
     from sqlalchemy import select
     from app.modules.tickets.models import Ticket
     result = await db.execute(
-        select(Ticket).where(Ticket.id == ticket_id, Ticket.is_deleted == False)
+        select(Ticket).where(
+            Ticket.id == ticket_id,
+            Ticket.is_deleted == False,
+            Ticket.status.in_(["DELIVERED", "READY"]),
+        )
     )
     ticket = result.scalar_one_or_none()
     if not ticket:
@@ -287,20 +298,27 @@ async def get_ticket_public_info(ticket_id: uuid.UUID, db: DbSession):
 
 
 @router.post("/{ticket_id}/rating", response_model=RatingResponse)
-async def submit_ticket_rating(ticket_id: uuid.UUID, data: RatingSubmit, db: DbSession):
-    """Allow a customer to submit a 1-5 star rating for a delivered ticket (no auth required)."""
+@limiter.limit("10/minute")
+async def submit_ticket_rating(request: Request, ticket_id: uuid.UUID, data: RatingSubmit, db: DbSession):
+    """Allow a customer to submit a 1-5 star rating for a delivered ticket (no auth required).
+    Only works on DELIVERED tickets — prevents rating manipulation on active tickets.
+    """
     from sqlalchemy import select
     from app.modules.tickets.models import Ticket
     if not (1 <= data.rating <= 5):
         raise HTTPException(status_code=422, detail="Rating must be between 1 and 5")
+    if data.feedback and len(data.feedback) > 2000:
+        raise HTTPException(status_code=422, detail="Feedback must be 2000 characters or less")
     result = await db.execute(
-        select(Ticket).where(Ticket.id == ticket_id, Ticket.is_deleted == False)
+        select(Ticket).where(
+            Ticket.id == ticket_id,
+            Ticket.is_deleted == False,
+            Ticket.status == "DELIVERED",
+        )
     )
     ticket = result.scalar_one_or_none()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    if ticket.status != "DELIVERED":
-        raise HTTPException(status_code=400, detail="Feedback can only be submitted for delivered tickets")
     ticket.customer_rating = data.rating
     ticket.customer_feedback = data.feedback
     await db.commit()

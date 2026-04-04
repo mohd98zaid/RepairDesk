@@ -191,7 +191,6 @@ export default function AnalyticsPage() {
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
     useEffect(() => {
-        if (!localStorage.getItem('adminToken')) { router.push('/admin/login'); return; }
         load();
     }, []);
 

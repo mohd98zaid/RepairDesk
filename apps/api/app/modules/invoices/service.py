@@ -23,7 +23,10 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 
 def _render_html(context: dict[str, Any]) -> str:
-    env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)))
+    env = Environment(
+        loader=FileSystemLoader(str(TEMPLATE_DIR)),
+        autoescape=True,  # CRITICAL: Prevent XSS in invoice HTML/PDF
+    )
     template = env.get_template("invoice.html")
     return template.render(**context)
 

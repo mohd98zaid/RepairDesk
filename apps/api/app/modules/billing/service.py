@@ -62,10 +62,17 @@ async def has_feature(shop_id: uuid.UUID, feature_key: str, db: AsyncSession) ->
 
             # Feature not in plan — check default
             return await _get_default_feature_value(feature_key, db)
-    except Exception:
-        # Billing tables may not exist yet on this deployment.
-        # Return None so callers treat it as "no restriction".
-        return None
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("billing.has_feature")
+        # Only return None (no restriction) if the error is a missing table (unmigrated DB)
+        err_msg = str(e).lower()
+        if "does not exist" in err_msg or "undefinedtable" in err_msg or "programmingerror" in err_msg:
+            logger.warning(f"Billing tables not available for feature '{feature_key}': {e}")
+            return None
+        # For all other errors (DB connection, auth failures, etc.) — log and deny access
+        logger.error(f"Error checking feature '{feature_key}': {e}")
+        return "false"  # Deny access rather than granting unlimited
 
 
 async def _get_default_feature_value(feature_key: str, db: AsyncSession) -> str | None:
@@ -93,7 +100,10 @@ async def _get_default_feature_value(feature_key: str, db: AsyncSession) -> str 
             return feature.default_value
 
         return None
-    except Exception:
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("billing.default_feature")
+        logger.error(f"Error getting default feature '{feature_key}': {e}")
         return None
 
 

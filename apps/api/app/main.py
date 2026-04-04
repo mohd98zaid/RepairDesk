@@ -1,7 +1,11 @@
+import logging
+import hashlib
+import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
@@ -13,7 +17,7 @@ from app.modules.users.router import users_router
 from app.modules.customers.router import router as customers_router
 from app.modules.tickets.router import router as tickets_router
 from app.core.admin import (
-    UserAdmin, ShopAdmin, CustomerAdmin, TicketAdmin, 
+    UserAdmin, ShopAdmin, CustomerAdmin, TicketAdmin,
     TicketStatusLogAdmin, InventoryItemAdmin, TicketPartAdmin, InvoiceAdmin
 )
 from sqladmin import Admin
@@ -32,6 +36,8 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 limiter = Limiter(key_func=get_remote_address)
+
+_logger = logging.getLogger("repairdesk.security")
 
 
 @asynccontextmanager
@@ -93,7 +99,12 @@ async def lifespan(app: FastAPI):
                 f"FATAL: JWT_SECRET is too short ({len(jwt_val)} chars). "
                 "Minimum 32 characters required in production."
             )
-        if jwt_val in ("change-me-in-production", "change_me", "secret", "changeme"):
+        _WEAK_JWT_SECRETS = {
+            "change-me-in-production", "change_me", "secret", "changeme",
+            "password", "123456", "jwt_secret", "mysecret", "supersecret",
+            "jwt-secret", "your-secret-key", "changeme123",
+        }
+        if jwt_val.lower() in _WEAK_JWT_SECRETS:
             raise RuntimeError(
                 "FATAL: JWT_SECRET is a common default value. "
                 "Use: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
@@ -113,8 +124,9 @@ def create_app() -> FastAPI:
         title="RepairDesk API",
         description="Digital Repair Ticket Management System",
         version="1.0.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url="/docs" if not settings.is_production else None,
+        redoc_url="/redoc" if not settings.is_production else None,
+        openapi_url="/openapi.json" if not settings.is_production else None,
         lifespan=lifespan,
     )
 
@@ -141,24 +153,27 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(Exception)
     async def generic_exception_handler(request: Request, exc: Exception):
-        """Catch-all handler to prevent raw 500s without CORS headers."""
-        import logging, traceback
+        """Catch-all handler — NEVER leak internals to clients."""
+        import traceback as _tb
+        tb = _tb.format_exc()
         logger = logging.getLogger("repairdesk.error")
-        tb = traceback.format_exc()
         logger.error(f"Unhandled exception on {request.url.path}: {exc}\n{tb}")
+
+        # In production: return only a generic message. No type, no message, no traceback.
+        if settings.is_production:
+            detail = "An unexpected error occurred. Please try again later."
+        else:
+            detail = f"{type(exc).__name__}: {exc}"
+
         headers = {}
         origin = request.headers.get("origin", "")
         if origin and origin in settings.cors_origins:
             headers["Access-Control-Allow-Origin"] = origin
             headers["Access-Control-Allow-Credentials"] = "true"
+
         return JSONResponse(
             status_code=500,
-            content={
-                "detail": "Internal server error",
-                "error_type": type(exc).__name__,
-                "error_message": str(exc),
-                "traceback": tb,
-            },
+            content={"detail": detail},
             headers=headers,
         )
 
@@ -255,434 +270,38 @@ def create_app() -> FastAPI:
             content={"status": "ok" if is_healthy else "degraded", "db": db_status, "redis": redis_status},
         )
 
-    # Analytics verification endpoint
-    @app.get(f"{prefix}/analytics/verify", tags=["Health"])
-    async def analytics_verify():
-        """Verify that subscription analytics tables exist and return counts."""
-        from app.core.db import AsyncSessionLocal
-        from sqlalchemy import text as sa_text, func, select
-
-        checks = {}
-        all_ok = True
-
-        async with AsyncSessionLocal() as session:
-            # Check plans table
-            try:
-                count = await session.scalar(sa_text("SELECT count(*) FROM plans"))
-                checks["plans"] = {"exists": True, "count": count}
-            except Exception as e:
-                checks["plans"] = {"exists": False, "error": str(e)}
-                all_ok = False
-
-            # Check features table
-            try:
-                count = await session.scalar(sa_text("SELECT count(*) FROM features"))
-                checks["features"] = {"exists": True, "count": count}
-            except Exception as e:
-                checks["features"] = {"exists": False, "error": str(e)}
-                all_ok = False
-
-            # Check subscriptions table
-            try:
-                count = await session.scalar(sa_text("SELECT count(*) FROM subscriptions"))
-                checks["subscriptions"] = {"exists": True, "count": count}
-            except Exception as e:
-                checks["subscriptions"] = {"exists": False, "error": str(e)}
-                all_ok = False
-
-            try:
-                count = await session.scalar(sa_text("SELECT count(*) FROM shops WHERE plan IS NOT NULL"))
-                checks["shops_with_plan"] = {"exists": True, "count": count}
-            except Exception as e:
-                checks["shops_with_plan"] = {"error": str(e)}
-
-        return JSONResponse(
-            status_code=200 if all_ok else 503,
-            content={"status": "ok" if all_ok else "degraded", "checks": checks},
+    # ─── Security headers middleware ───────────────────────────────
+    @app.middleware("http")
+    async def add_security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=(), payment=()"
         )
+        if settings.is_production:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=63072000; includeSubDomains; preload"
+            )
+        # Content-Security-Policy — strict, no unsafe-inline for scripts
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob: https:; "
+            "font-src 'self' data:; "
+            "connect-src 'self' ws: wss: https:; "
+            "frame-ancestors 'none'; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self';"
+        )
+        return response
 
-    # Fix #7: Temporary migration endpoint — ONLY available in non-production environments.
-    # This endpoint drops and recreates all tables. NEVER expose in production.
-    if not settings.is_production:
-        @app.get(f"{prefix}/debug/migrate", tags=["Health"])
-        async def apply_migrations():
-            """Create all tables matching the SQLAlchemy models exactly. Idempotent. DEV ONLY."""
-            from app.core.db import AsyncSessionLocal
-            from sqlalchemy import text
-
-            results = []
-            try:
-                async with AsyncSessionLocal() as session:
-                    # Drop old broken tables (in reverse dependency order)
-                    for tbl in ["purchase_order_items", "purchase_orders", "vendors", "ticket_parts",
-                                "ticket_images", "ticket_charges", "ticket_status_logs", "tickets",
-                                "invoices", "inventory_items", "subscriptions", "plan_features",
-                                "features", "plans", "customers", "invitations", "users", "shops"]:
-                        await session.execute(text(f"DROP TABLE IF EXISTS {tbl} CASCADE"))
-                    results.append("dropped all old tables")
-                    # ── Enums ──
-                    await session.execute(text("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN CREATE TYPE user_role AS ENUM ('OWNER', 'TECHNICIAN'); END IF; END $$;"))
-                    await session.execute(text("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ticket_status') THEN CREATE TYPE ticket_status AS ENUM ('RECEIVED', 'IN_PROGRESS', 'WAITING_PARTS', 'READY', 'DELIVERED', 'CANCELLED'); END IF; END $$;"))
-
-                    # Fix #11: Add custom_device_limit column (matches Shop model)
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS shops (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            short_id VARCHAR(12) NOT NULL DEFAULT ('SHOP-' || UPPER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 6))),
-                            name VARCHAR(255) NOT NULL,
-                            phone VARCHAR(30),
-                            email VARCHAR(255),
-                            logo_key TEXT,
-                            address TEXT,
-                            pincode VARCHAR(10),
-                            gst_number VARCHAR(20),
-                            logo_data TEXT,
-                            plan VARCHAR(20) NOT NULL DEFAULT 'free',
-                            plan_expires_at TIMESTAMPTZ,
-                            is_active BOOLEAN NOT NULL DEFAULT true,
-                            shop_status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
-                            admin_note TEXT,
-                            custom_device_limit INTEGER,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    results.append("shops: ok")
-
-                    # 2. users
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS users (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            full_name VARCHAR(255) NOT NULL,
-                            email VARCHAR(255) NOT NULL UNIQUE,
-                            password_hash TEXT NOT NULL,
-                            role user_role NOT NULL DEFAULT 'TECHNICIAN',
-                            is_active BOOLEAN NOT NULL DEFAULT true,
-                            avatar_data TEXT,
-                            last_login_at TIMESTAMPTZ,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_users_shop_id ON users(shop_id)"))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)"))
-                    results.append("users: ok")
-
-                    # 3. invitations
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS invitations (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            email VARCHAR(255) NOT NULL,
-                            role user_role NOT NULL DEFAULT 'TECHNICIAN',
-                            token TEXT NOT NULL UNIQUE,
-                            accepted BOOLEAN NOT NULL DEFAULT false,
-                            expires_at TIMESTAMPTZ NOT NULL,
-                            created_by UUID NOT NULL REFERENCES users(id),
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    results.append("invitations: ok")
-
-                    # 4. customers
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS customers (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            short_id VARCHAR(10) NOT NULL DEFAULT ('CUS-' || UPPER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 6))),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            name VARCHAR(255) NOT NULL,
-                            phone VARCHAR(30) NOT NULL,
-                            email VARCHAR(255),
-                            notes TEXT,
-                            is_deleted BOOLEAN NOT NULL DEFAULT false,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            UNIQUE(shop_id, phone)
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_customers_shop_id ON customers(shop_id)"))
-                    await session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_short_id ON customers(short_id)"))
-                    results.append("customers: ok")
-
-                    # 5. tickets
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS tickets (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            customer_id UUID NOT NULL REFERENCES customers(id),
-                            assigned_to UUID REFERENCES users(id),
-                            ticket_number INTEGER NOT NULL,
-                            device_type VARCHAR(100) NOT NULL,
-                            device_model VARCHAR(150),
-                            reported_issue TEXT NOT NULL,
-                            technician_notes TEXT,
-                            status ticket_status NOT NULL DEFAULT 'RECEIVED',
-                            estimated_cost DECIMAL(10,2),
-                            final_cost DECIMAL(10,2),
-                            parts_cost DECIMAL(10,2) NOT NULL DEFAULT 0,
-                            profit DECIMAL(10,2),
-                            warranty_days INTEGER,
-                            pre_repair_checklist JSONB,
-                            customer_signature TEXT,
-                            customer_rating INTEGER,
-                            customer_feedback TEXT,
-                            is_deleted BOOLEAN NOT NULL DEFAULT false,
-                            created_by UUID NOT NULL REFERENCES users(id),
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            UNIQUE(shop_id, ticket_number)
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_shop_id ON tickets(shop_id)"))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_customer_id ON tickets(customer_id)"))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_tickets_created_at ON tickets(created_at)"))
-                    results.append("tickets: ok")
-
-                    # 6. ticket_charges
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS ticket_charges (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-                            name VARCHAR(200) NOT NULL,
-                            amount DECIMAL(10,2) NOT NULL,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_ticket_charges_ticket_id ON ticket_charges(ticket_id)"))
-                    results.append("ticket_charges: ok")
-
-                    # 7. ticket_images
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS ticket_images (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-                            minio_key TEXT NOT NULL,
-                            filename VARCHAR(255),
-                            size_bytes INTEGER,
-                            uploaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_ticket_images_ticket_id ON ticket_images(ticket_id)"))
-                    results.append("ticket_images: ok")
-
-                    # 8. ticket_status_logs
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS ticket_status_logs (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-                            from_status ticket_status,
-                            to_status ticket_status NOT NULL,
-                            notes TEXT,
-                            changed_by UUID NOT NULL REFERENCES users(id),
-                            changed_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_status_logs_ticket_id ON ticket_status_logs(ticket_id)"))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_status_logs_changed_at ON ticket_status_logs(changed_at)"))
-                    results.append("ticket_status_logs: ok")
-
-                    # 9. inventory_items
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS inventory_items (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            short_id VARCHAR(10) NOT NULL DEFAULT ('PRD-' || UPPER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 6))),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            name VARCHAR(255) NOT NULL,
-                            sku VARCHAR(100),
-                            description TEXT,
-                            purchase_price DECIMAL(10,2) NOT NULL,
-                            selling_price DECIMAL(10,2) NOT NULL,
-                            quantity INTEGER NOT NULL DEFAULT 0,
-                            low_stock_threshold INTEGER NOT NULL DEFAULT 5,
-                            is_deleted BOOLEAN NOT NULL DEFAULT false,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_inventory_shop_id ON inventory_items(shop_id)"))
-                    await session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_inventory_short_id ON inventory_items(short_id)"))
-                    results.append("inventory_items: ok")
-
-                    # 10. ticket_parts
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS ticket_parts (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-                            inventory_item_id UUID NOT NULL REFERENCES inventory_items(id),
-                            quantity_used INTEGER NOT NULL,
-                            unit_purchase_price DECIMAL(10,2) NOT NULL,
-                            unit_selling_price DECIMAL(10,2) NOT NULL,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_ticket_parts_ticket_id ON ticket_parts(ticket_id)"))
-                    results.append("ticket_parts: ok")
-
-                    # 11. vendors
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS vendors (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            name VARCHAR(255) NOT NULL,
-                            contact_name VARCHAR(255),
-                            email VARCHAR(255),
-                            phone VARCHAR(50),
-                            address TEXT,
-                            website VARCHAR(255),
-                            notes TEXT,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_vendors_shop_id ON vendors(shop_id)"))
-                    results.append("vendors: ok")
-
-                    # 12. purchase_orders
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS purchase_orders (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            vendor_id UUID NOT NULL REFERENCES vendors(id),
-                            po_number VARCHAR(100) NOT NULL,
-                            status VARCHAR(50) NOT NULL DEFAULT 'DRAFT',
-                            total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
-                            notes TEXT,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_po_shop_id ON purchase_orders(shop_id)"))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_po_number ON purchase_orders(po_number)"))
-                    results.append("purchase_orders: ok")
-
-                    # 13. purchase_order_items
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS purchase_order_items (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            po_id UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
-                            inventory_item_id UUID NOT NULL REFERENCES inventory_items(id),
-                            quantity INTEGER NOT NULL DEFAULT 1,
-                            unit_cost DECIMAL(10,2) NOT NULL DEFAULT 0,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_poi_po_id ON purchase_order_items(po_id)"))
-                    results.append("purchase_order_items: ok")
-
-                    # 14. invoices
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS invoices (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            ticket_id UUID NOT NULL REFERENCES tickets(id),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            invoice_number VARCHAR(30) NOT NULL,
-                            total_amount DECIMAL(10,2) NOT NULL,
-                            minio_key TEXT,
-                            public_token VARCHAR(64) NOT NULL UNIQUE,
-                            generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_invoices_ticket_id ON invoices(ticket_id)"))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_invoices_shop_id ON invoices(shop_id)"))
-                    results.append("invoices: ok")
-
-                    # 15. billing: plans, features, plan_features, subscriptions
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS plans (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            name VARCHAR(100) NOT NULL UNIQUE,
-                            slug VARCHAR(50) NOT NULL UNIQUE,
-                            description TEXT,
-                            price_monthly DECIMAL(10,2) NOT NULL DEFAULT 0,
-                            price_yearly DECIMAL(10,2) NOT NULL DEFAULT 0,
-                            is_active BOOLEAN NOT NULL DEFAULT true,
-                            is_public BOOLEAN NOT NULL DEFAULT true,
-                            sort_order INTEGER NOT NULL DEFAULT 0,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_plan_slug ON plans(slug)"))
-
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS features (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            key VARCHAR(100) NOT NULL UNIQUE,
-                            name VARCHAR(200) NOT NULL,
-                            description TEXT,
-                            feature_type VARCHAR(20) NOT NULL DEFAULT 'boolean',
-                            default_value VARCHAR(100) NOT NULL DEFAULT 'false',
-                            is_active BOOLEAN NOT NULL DEFAULT true,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                        );
-                    """))
-                    await session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_feature_key ON features(key)"))
-
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS plan_features (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-                            feature_id UUID NOT NULL REFERENCES features(id) ON DELETE CASCADE,
-                            value VARCHAR(100) NOT NULL DEFAULT 'true',
-                            UNIQUE(plan_id, feature_id)
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_pf_plan ON plan_features(plan_id)"))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_pf_feature ON plan_features(feature_id)"))
-
-                    await session.execute(text("""
-                        CREATE TABLE IF NOT EXISTS subscriptions (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-                            plan_id UUID NOT NULL REFERENCES plans(id),
-                            status VARCHAR(20) NOT NULL DEFAULT 'active',
-                            billing_cycle VARCHAR(10) NOT NULL DEFAULT 'monthly',
-                            current_period_start TIMESTAMPTZ NOT NULL,
-                            current_period_end TIMESTAMPTZ NOT NULL,
-                            stripe_subscription_id VARCHAR(255),
-                            cancelled_at TIMESTAMPTZ,
-                            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                            UNIQUE(shop_id)
-                        );
-                    """))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_sub_shop ON subscriptions(shop_id)"))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_sub_plan ON subscriptions(plan_id)"))
-                    await session.execute(text("CREATE INDEX IF NOT EXISTS idx_sub_status ON subscriptions(status)"))
-
-                    # Fix #10: Seed features — device_limit is required by auth service on every login
-                    await session.execute(text("""
-                        INSERT INTO features (key, name, description, feature_type, default_value, is_active) VALUES
-                            ('ticket_limit', 'Ticket Limit', 'Maximum active tickets', 'numeric', '25', true),
-                            ('team_limit', 'Team Members', 'Maximum team members', 'numeric', '2', true),
-                            ('inventory_limit', 'Inventory Items', 'Maximum inventory items', 'numeric', '100', true),
-                            ('customer_limit', 'Customers', 'Maximum customers', 'numeric', '200', true),
-                            ('device_limit', 'Device Limit', 'Maximum concurrent login sessions per shop', 'numeric', '1', true),
-                            ('analytics_access', 'Analytics Dashboard', 'Access to shop analytics', 'boolean', 'true', true),
-                            ('reports_access', 'Reports', 'Access to detailed reports', 'boolean', 'false', true),
-                            ('api_access', 'API Access', 'REST API access', 'boolean', 'false', true),
-                            ('custom_branding', 'Custom Branding', 'Custom logo and colors', 'boolean', 'false', true),
-                            ('priority_support', 'Priority Support', 'Priority customer support', 'boolean', 'false', true),
-                            ('image_storage_mb', 'Image Storage', 'Storage for ticket images in MB', 'numeric', '500', true)
-                        ON CONFLICT (key) DO NOTHING;
-                    """))
-
-                    # Seed plans
-                    await session.execute(text("""
-                        INSERT INTO plans (name, slug, description, price_monthly, price_yearly, is_active, is_public, sort_order) VALUES
-                            ('Free', 'free', 'Basic plan for small shops', 0, 0, true, true, 0),
-                            ('Pro', 'pro', 'Professional plan with all features', 29.99, 299.99, true, true, 1),
-                            ('Enterprise', 'enterprise', 'Unlimited everything', 99.99, 999.99, true, true, 2)
-                        ON CONFLICT (slug) DO NOTHING;
-                    """))
-                    results.append("billing: ok + seeded")
-
-                    await session.commit()
-                return {"status": "ok", "results": results}
-            except Exception as e:
-                import traceback
-                return {"status": "error", "message": str(e), "traceback": traceback.format_exc(), "results": results}
+    # ─── REMOVED: /debug/migrate endpoint (was a catastrophic security hole) ──
+    # ─── REMOVED: /analytics/verify endpoint (exposed internal table structure) ──
     return app
 
 

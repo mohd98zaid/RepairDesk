@@ -274,8 +274,8 @@ function PrintLabel({ ticket }: {
 <!-- ── Header ── -->
 <div class="header">
   <div class="brand-block">
-    ${shopLogo
-        ? `<img class="brand-logo" src="${shopLogo}" alt="logo"/>`
+    ${safeUrl(shopLogo)
+        ? `<img class="brand-logo" src="${escHtml(safeUrl(shopLogo))}" alt="logo"/>`
         : `<div class="brand-logo-placeholder">${escHtml(shopName[0] || "R")}</div>`
     }
     <div>
@@ -376,13 +376,13 @@ function PrintLabel({ ticket }: {
 <!-- ── Footer row ── -->
 <div class="footer-row">
   <div class="qr-block">
-    <img src="${qrUrl}" alt="QR" width="100" height="100"/>
+    <img src="${escHtml(safeUrl(qrUrl))}" alt="QR" width="100" height="100"/>
     <div class="qr-caption">Scan to track repair</div>
   </div>
 
   <div class="sig-block">
     <div class="sig-label">Customer Signature</div>
-    ${sig ? `<img class="sig-img" src="${sig}" alt="Signature"/>` : `<div style="font-size:10px;color:#d1d5db;font-style:italic;margin-top:8px">No signature captured</div>`}
+    ${safeUrl(sig) ? `<img class="sig-img" src="${escHtml(safeUrl(sig))}" alt="Signature"/>` : `<div style="font-size:10px;color:#d1d5db;font-style:italic;margin-top:8px">No signature captured</div>`}
   </div>
 
   <div style="display:flex;flex-direction:column;gap:10px;flex:1">
@@ -417,6 +417,23 @@ function PrintLabel({ ticket }: {
 /** Minimal HTML escaping to prevent XSS in the print window */
 function escHtml(s: string | null | undefined): string {
     return (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Validate a URL is safe for use in HTML attributes — rejects javascript:, data: (non-image), etc. */
+function safeUrl(url: string | null | undefined): string {
+    if (!url) return "";
+    try {
+        // Allow data:image/* URIs (for base64 logos/signatures)
+        if (url.startsWith("data:image/")) return url;
+        // Allow https and http
+        const parsed = new URL(url);
+        if (parsed.protocol === "https:" || parsed.protocol === "http:") return url;
+        return ""; // reject javascript:, file:, etc.
+    } catch {
+        // Not a valid URL — could be relative. Allow relative paths starting with /
+        if (url.startsWith("/")) return url;
+        return "";
+    }
 }
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {

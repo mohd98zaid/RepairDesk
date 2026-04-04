@@ -59,7 +59,7 @@ function KPICard({
 }
 
 export default function DashboardPage() {
-    const { accessToken } = useAuthStore();
+    const { user } = useAuthStore();
     const [kpi, setKpi] = useState<KPI | null>(null);
     const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
     const [recentTickets, setRecentTickets] = useState<
@@ -69,8 +69,8 @@ export default function DashboardPage() {
     const [error, setError] = useState(false);
 
     useEffect(() => {
-        if (accessToken) loadData();
-    }, [accessToken]);
+        loadData();
+    }, []);
 
     async function loadData() {
         setLoading(true);

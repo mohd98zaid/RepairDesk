@@ -1,5 +1,6 @@
 from pydantic import BaseModel, EmailStr, field_validator
 from uuid import UUID
+import re
 
 
 class SendOtpRequest(BaseModel):
@@ -17,10 +18,28 @@ class VerifyOtpRequest(BaseModel):
     email: EmailStr
     otp: str
 
+    @field_validator("otp")
+    @classmethod
+    def validate_otp_format(cls, v: str) -> str:
+        if not re.fullmatch(r"\d{6}", v):
+            raise ValueError("OTP must be exactly 6 digits.")
+        return v
+
 
 class VerifyOtpResponse(BaseModel):
     verified_token: str
     message: str = "Email verified successfully."
+
+
+def _validate_password(v: str) -> str:
+    """Shared password strength validator."""
+    if len(v) < 8:
+        raise ValueError("Password must be at least 8 characters.")
+    if not re.search(r"[A-Z]", v):
+        raise ValueError("Password must contain at least one uppercase letter.")
+    if not re.search(r"[0-9]", v):
+        raise ValueError("Password must contain at least one number.")
+    return v
 
 
 class RegisterRequest(BaseModel):
@@ -38,6 +57,18 @@ class RegisterRequest(BaseModel):
             raise ValueError("Only Gmail addresses (@gmail.com) are allowed.")
         return v.lower()
 
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return _validate_password(v)
+
+    @field_validator("shop_name")
+    @classmethod
+    def validate_shop_name_length(cls, v: str) -> str:
+        if len(v) > 200:
+            raise ValueError("Shop name must be 200 characters or less.")
+        return v
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -45,10 +76,7 @@ class LoginRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
-    # Fix #6: refresh_token is never returned in the body (httpOnly cookie only).
-    # Field kept for backward-compat clients but will always be None/empty.
-    refresh_token: str | None = None
+    access_token: str | None = None
     token_type: str = "bearer"
     user: "AuthUserPayload"
 
@@ -83,6 +111,11 @@ class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
 
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return _validate_password(v)
+
 
 class ForceLogoutOtpRequest(BaseModel):
     email: EmailStr
@@ -99,3 +132,10 @@ class ForceLogoutRequest(BaseModel):
     email: EmailStr
     otp: str
     password: str
+
+    @field_validator("otp")
+    @classmethod
+    def validate_otp_format(cls, v: str) -> str:
+        if not re.fullmatch(r"\d{6}", v):
+            raise ValueError("OTP must be exactly 6 digits.")
+        return v

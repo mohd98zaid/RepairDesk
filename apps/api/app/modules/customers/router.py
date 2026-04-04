@@ -58,10 +58,11 @@ async def get_customer(
     from app.modules.tickets.models import Ticket
     customer = await service.get_customer(current_user["shop_id"], customer_id, db)
 
-    # Ticket history (summary)
+    # Ticket history (summary) — CRITICAL: filter by shop_id to prevent cross-tenant leak
     tickets_result = await db.execute(
         select(Ticket).where(
             Ticket.customer_id == customer_id,
+            Ticket.shop_id == current_user["shop_id"],
             Ticket.is_deleted == False,
         ).order_by(Ticket.created_at.desc())
     )

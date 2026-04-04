@@ -54,13 +54,12 @@ describe('AppShell Component', () => {
                 role: 'OWNER',
                 shop_id: 'shop1'
             },
-            accessToken: 'fake',
-            refreshToken: null
+            accessToken: null
         });
         
         // Mock localStorage
         Storage.prototype.getItem = vi.fn((key: string) => {
-            if (key === 'repairdesk-auth') return JSON.stringify({ state: { accessToken: 'fake' } });
+            if (key === 'repairdesk-auth') return JSON.stringify({ state: { user: { id: 'opt1' } } });
             if (key === 'repairdesk_skip_onboarding') return 'true';
             return null;
         });

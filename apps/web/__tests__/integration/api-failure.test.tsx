@@ -28,7 +28,7 @@ vi.mock('@/lib/api/client', () => ({
     },
 }));
 
-import api from '@/lib/api/client';
+import { api } from '@/lib/api/client';
 
 // ─────────────────────────────────────────────
 // API CLIENT TESTS
@@ -122,22 +122,20 @@ describe('API Response Contract Validation', () => {
         // If backend stops returning refresh_token, frontend should not crash
         const incompleteResponse = {
             data: {
-                access_token: 'eyJhbGci...',
+                // Login response now returns user object only (tokens are in httpOnly cookies)
                 user: { id: '1', email: 'test@test.com', role: 'OWNER', shop_id: '1' },
-                // Missing refresh_token!
             },
         };
         (api.post as any).mockResolvedValue(incompleteResponse);
 
-        // The auth store should handle missing refresh_token gracefully
-        expect(incompleteResponse.data.refresh_token).toBeUndefined();
+        // The auth store should handle the user-only response gracefully
+        expect(incompleteResponse.data.user).toBeDefined();
     });
 
     it('should handle login response missing user fields', async () => {
-        const incompleteUser = {
+        const incompleteUser: { data: { user: Record<string, any> } } = {
             data: {
-                access_token: 'eyJhbGci...',
-                refresh_token: 'eyJhbGci...',
+                // Login response with incomplete user object
                 user: {
                     email: 'test@test.com',
                     // Missing: id, full_name, role, shop_id
@@ -156,7 +154,7 @@ describe('API Response Contract Validation', () => {
     });
 
     it('should handle ticket list response missing pagination fields', async () => {
-        const incompleteList = {
+        const incompleteList: { data: Record<string, any> } = {
             data: {
                 items: [],
                 // Missing: total, page, per_page, pages

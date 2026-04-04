@@ -25,7 +25,6 @@ export default function AuditLogsPage() {
     const PER_PAGE = 50;
 
     useEffect(() => {
-        if (!localStorage.getItem('adminToken')) { router.push('/admin/login'); return; }
         load();
     }, [page]);
 

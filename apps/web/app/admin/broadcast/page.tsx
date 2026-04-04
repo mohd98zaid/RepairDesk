@@ -25,7 +25,6 @@ export default function BroadcastPage() {
     const [deleting, setDeleting] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!localStorage.getItem('adminToken')) { router.push('/admin/login'); return; }
         load();
     }, []);
 

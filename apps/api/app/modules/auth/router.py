@@ -20,16 +20,51 @@ from app.modules.auth.schemas import (
     ForceLogoutOtpRequest,
     ForceLogoutRequest,
 )
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
-limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+ACCESS_COOKIE_NAME = "repairdesk_access"
 REFRESH_COOKIE_NAME = "repairdesk_refresh"
 REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
+ACCESS_COOKIE_MAX_AGE = 60 * 15  # 15 minutes
 
+# In dev (HTTP localhost), secure=True causes browsers to reject cookies.
+# In production (HTTPS), secure=True is required.
+_COOKIE_SECURE = settings.is_production
+
+
+def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    """Set both access and refresh tokens as httpOnly cookies."""
+    response.set_cookie(
+        key=ACCESS_COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        secure=_COOKIE_SECURE,
+        samesite="none" if _COOKIE_SECURE else "lax",
+        max_age=ACCESS_COOKIE_MAX_AGE,
+        path="/",
+    )
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=refresh_token,
+        httponly=True,
+        secure=_COOKIE_SECURE,
+        samesite="none" if _COOKIE_SECURE else "lax",
+        max_age=REFRESH_COOKIE_MAX_AGE,
+        path="/",
+    )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    """Delete both auth cookies."""
+    samesite = "none" if _COOKIE_SECURE else "lax"
+    response.delete_cookie(key=ACCESS_COOKIE_NAME, path="/", secure=_COOKIE_SECURE, samesite=samesite)
+    response.delete_cookie(key=REFRESH_COOKIE_NAME, path="/", secure=_COOKIE_SECURE, samesite=samesite)
+
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+limiter = Limiter(key_func=get_remote_address)
 
 @router.post("/send-otp", status_code=202)
 @limiter.limit("5/minute")
@@ -40,13 +75,14 @@ async def send_otp(request: Request, data: SendOtpRequest, db: DbSession):
 
 
 @router.post("/verify-otp", response_model=VerifyOtpResponse, status_code=200)
-async def verify_otp(data: VerifyOtpRequest, db: DbSession):
+@limiter.limit("10/minute")
+async def verify_otp(request: Request, data: VerifyOtpRequest, db: DbSession):
     """Verify the 6-digit OTP and return a verified_token."""
     token = await service.verify_otp(data.email, data.otp, db)
     return VerifyOtpResponse(verified_token=token)
 
 
-@router.post("/register", response_model=TokenResponse, status_code=201)
+@router.post("/register", status_code=201)
 @limiter.limit("5/minute")
 async def register(
     request: Request,
@@ -54,36 +90,23 @@ async def register(
     response: Response,
     db: DbSession,
 ):
-    """Register a new shop and owner account. Returns JWT access token."""
+    """Register a new shop and owner account. Tokens set as httpOnly cookies."""
     result = await service.register_shop(data, db)
-
-    # Fix #6: Refresh token travels ONLY via httpOnly cookie — never in JSON body
-    response.set_cookie(
-        key=REFRESH_COOKIE_NAME,
-        value=result["refresh_token"],
-        httponly=True,
-        secure=True,
-        samesite="none",
-        max_age=REFRESH_COOKIE_MAX_AGE,
-    )
+    _set_auth_cookies(response, result["access_token"], result["refresh_token"])
 
     user_obj = result["user"]
-    user_payload = AuthUserPayload(
-        id=user_obj.id,
-        full_name=user_obj.full_name,
-        email=user_obj.email,
-        role=str(user_obj.role.value) if hasattr(user_obj.role, "value") else str(user_obj.role),
-        shop_id=user_obj.shop_id,
-    )
-
-    return TokenResponse(
-        access_token=result["access_token"],
-        refresh_token=None,  # Fix #6: never expose in body
-        user=user_payload,
-    )
+    return {
+        "user": AuthUserPayload(
+            id=user_obj.id,
+            full_name=user_obj.full_name,
+            email=user_obj.email,
+            role=str(user_obj.role.value) if hasattr(user_obj.role, "value") else str(user_obj.role),
+            shop_id=user_obj.shop_id,
+        ).model_dump(mode="json"),
+    }
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", status_code=200)
 @limiter.limit("10/minute")
 async def login(
     request: Request,
@@ -91,51 +114,38 @@ async def login(
     response: Response,
     db: DbSession,
 ):
-    """Authenticate with email + password. Returns JWT access token."""
+    """Authenticate with email + password. Tokens set as httpOnly cookies."""
     result = await service.login_user(data, db)
-
-    # Fix #6: Refresh token travels ONLY via httpOnly cookie — never in JSON body
-    response.set_cookie(
-        key=REFRESH_COOKIE_NAME,
-        value=result["refresh_token"],
-        httponly=True,
-        secure=True,
-        samesite="none",
-        max_age=REFRESH_COOKIE_MAX_AGE,
-    )
+    _set_auth_cookies(response, result["access_token"], result["refresh_token"])
 
     user_obj = result["user"]
-    user_payload = AuthUserPayload(
-        id=user_obj.id,
-        full_name=user_obj.full_name,
-        email=user_obj.email,
-        role=str(user_obj.role.value) if hasattr(user_obj.role, "value") else str(user_obj.role),
-        shop_id=user_obj.shop_id,
-    )
-
-    return TokenResponse(
-        access_token=result["access_token"],
-        refresh_token=None,  # Fix #6: never expose in body
-        user=user_payload,
-    )
+    return {
+        "user": AuthUserPayload(
+            id=user_obj.id,
+            full_name=user_obj.full_name,
+            email=user_obj.email,
+            role=str(user_obj.role.value) if hasattr(user_obj.role, "value") else str(user_obj.role),
+            shop_id=user_obj.shop_id,
+        ).model_dump(mode="json"),
+    }
 
 
-@router.post("/refresh", response_model=RefreshResponse)
+@router.post("/refresh", status_code=200)
+@limiter.limit("30/minute")
 async def refresh(
     request: Request,
+    response: Response,
     db: DbSession,
     repairdesk_refresh: str | None = Cookie(default=None),
 ):
-    """Exchange a valid refresh token for a new access token.
-
-    Fix #6: Refresh token is accepted ONLY from the httpOnly cookie.
-    The body-fallback is removed to prevent XSS token theft.
-    """
+    """Exchange a valid refresh token for new access+refresh tokens. Reads from httpOnly cookie."""
     if not repairdesk_refresh:
         raise UnauthorizedException("Refresh token not found.")
 
-    access_token = await service.refresh_access_token(repairdesk_refresh, db)
-    return RefreshResponse(access_token=access_token)
+    result = await service.refresh_access_token(repairdesk_refresh, db)
+    _set_auth_cookies(response, result["access_token"], result["refresh_token"])
+
+    return {"ok": True}
 
 
 @router.post("/logout", status_code=204)
@@ -143,9 +153,9 @@ async def logout(
     response: Response,
     current_user: CurrentUser,
 ):
-    """Revoke refresh token and clear the cookie."""
+    """Revoke refresh token and clear cookies."""
     await service.logout_user(current_user["user_id"], current_user.get("session_id"))
-    response.delete_cookie(key=REFRESH_COOKIE_NAME)
+    _clear_auth_cookies(response)
 
 
 @router.post("/forgot-password", status_code=202)
@@ -157,7 +167,8 @@ async def forgot_password(request: Request, data: ForgotPasswordRequest, db: DbS
 
 
 @router.post("/reset-password", status_code=200)
-async def reset_password(data: ResetPasswordRequest, db: DbSession):
+@limiter.limit("5/minute")
+async def reset_password(request: Request, data: ResetPasswordRequest, db: DbSession):
     """Reset the password using a valid token."""
     await service.reset_password(data.token, data.new_password, db)
     return {"message": "Password successfully updated."}
@@ -171,7 +182,7 @@ async def force_logout_otp(request: Request, data: ForceLogoutOtpRequest, db: Db
     return {"message": "If that email has an active account, an OTP has been sent."}
 
 
-@router.post("/force-logout-login", response_model=TokenResponse, status_code=200)
+@router.post("/force-logout-login", status_code=200)
 @limiter.limit("5/minute")
 async def force_logout_login(
     request: Request,
@@ -179,30 +190,23 @@ async def force_logout_login(
     response: Response,
     db: DbSession,
 ):
-    """Verify OTP, evict all other sessions, and issue a fresh session."""
+    """Verify OTP, evict all other sessions, and issue a fresh session. Tokens as httpOnly cookies."""
     result = await service.force_logout_others_and_login(data.email, data.otp, data.password, db)
-
-    # Fix #6: Refresh token travels ONLY via httpOnly cookie
-    response.set_cookie(
-        key=REFRESH_COOKIE_NAME,
-        value=result["refresh_token"],
-        httponly=True,
-        secure=True,
-        samesite="none",
-        max_age=REFRESH_COOKIE_MAX_AGE,
-    )
+    _set_auth_cookies(response, result["access_token"], result["refresh_token"])
 
     user_obj = result["user"]
-    user_payload = AuthUserPayload(
-        id=user_obj.id,
-        full_name=user_obj.full_name,
-        email=user_obj.email,
-        role=str(user_obj.role.value) if hasattr(user_obj.role, "value") else str(user_obj.role),
-        shop_id=user_obj.shop_id,
-    )
+    return {
+        "user": AuthUserPayload(
+            id=user_obj.id,
+            full_name=user_obj.full_name,
+            email=user_obj.email,
+            role=str(user_obj.role.value) if hasattr(user_obj.role, "value") else str(user_obj.role),
+            shop_id=user_obj.shop_id,
+        ).model_dump(mode="json"),
+    }
 
-    return TokenResponse(
-        access_token=result["access_token"],
-        refresh_token=None,  # Fix #6: never expose in body
-        user=user_payload,
-    )
+
+@router.get("/me", status_code=200)
+async def get_me(current_user: CurrentUser):
+    """Return current user info (from cookie-based auth)."""
+    return current_user

@@ -45,7 +45,7 @@ test.describe('Responsive Layout', () => {
         
         // Mock a token to bypass login to view the AppShell
         await page.addInitScript(() => {
-            localStorage.setItem('repairdesk-auth', JSON.stringify({ state: { accessToken: 'fake' } }));
+            localStorage.setItem('repairdesk-auth', JSON.stringify({ state: { user: { id: 'test', email: 'test@test.com', role: 'OWNER', shop_id: 'shop1' } } }));
         });
         await page.goto('/dashboard');
         

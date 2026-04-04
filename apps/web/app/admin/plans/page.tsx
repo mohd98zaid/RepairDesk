@@ -35,7 +35,6 @@ export default function PlansPage() {
     const [subsTotal, setSubsTotal] = useState(0);
 
     useEffect(() => {
-        if (!localStorage.getItem('adminToken')) { router.push('/admin/login'); return; }
         load();
     }, []);
 

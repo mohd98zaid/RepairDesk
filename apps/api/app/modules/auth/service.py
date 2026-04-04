@@ -1,4 +1,6 @@
 import uuid
+import secrets
+import hmac
 from datetime import datetime, timezone
 
 from sqlalchemy import select, update
@@ -29,12 +31,12 @@ async def send_otp(email: str, db: AsyncSession) -> None:
         # Don't reveal email exists — return success anyway
         return
 
-    import random
     from app.modules.notifications.email import EmailService
     from app.core.config import settings
 
-    otp = f"{random.randint(0, 999999):06d}"
-    
+    # CRITICAL FIX: Use cryptographically secure RNG
+    otp = f"{secrets.randbelow(1_000_000):06d}"
+
     redis = await get_redis()
     await redis.setex(f"otp:{email}", 60 * 10, otp)  # 10 minutes
 
@@ -48,16 +50,16 @@ async def verify_otp(email: str, otp: str, db: AsyncSession) -> str:
     """
     redis = await get_redis()
     stored_otp = await redis.get(f"otp:{email}")
-    
-    if not stored_otp or stored_otp != otp:
+
+    # CRITICAL FIX: Use constant-time comparison to prevent timing attacks
+    if not stored_otp or not hmac.compare_digest(str(stored_otp), str(otp)):
         raise UnauthorizedException("Invalid or expired OTP.")
 
     await redis.delete(f"otp:{email}")
 
-    import secrets
     verified_token = secrets.token_urlsafe(32)
     await redis.setex(f"verified:{verified_token}", 60 * 5, email)  # 5 minutes
-    
+
     return verified_token
 
 
@@ -243,10 +245,10 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
 
 
 
-async def refresh_access_token(refresh_token: str, db: AsyncSession) -> str:
+async def refresh_access_token(refresh_token: str, db: AsyncSession) -> dict:
     """
     Validate the refresh token, verify it still exists in Redis,
-    and issue a new access token.
+    and issue a NEW access token + NEW refresh token (rotation).
     """
     from jose import JWTError
 
@@ -266,16 +268,14 @@ async def refresh_access_token(refresh_token: str, db: AsyncSession) -> str:
     redis = await get_redis()
     stored_token = await redis.get(f"refresh:{user_id}:{session_id}")
 
-    if not stored_token or stored_token != refresh_token:
+    # CRITICAL: Constant-time comparison to prevent timing attacks
+    if not stored_token or not hmac.compare_digest(str(stored_token), str(refresh_token)):
         raise UnauthorizedException("Refresh token has been revoked.")
 
     # ─── Inactivity check ───────────────────────────────────────
-    # If the user hasn't made any API call in the last 12 hours, the
-    # activity key will have expired. Force them to log in again.
     activity_key = f"activity:{user_id}:{session_id}"
     activity_exists = await redis.exists(activity_key)
     if not activity_exists:
-        # Revoke the refresh token too — clean up the session
         await redis.delete(f"refresh:{user_id}:{session_id}")
         raise UnauthorizedException(
             "Your session has expired due to inactivity. Please log in again."
@@ -294,6 +294,9 @@ async def refresh_access_token(refresh_token: str, db: AsyncSession) -> str:
     if not shop_status or shop_status in ("BLOCKED", "INACTIVE"):
         raise UnauthorizedException("Your shop account is currently not active.")
 
+    # ─── REFRESH TOKEN ROTATION: invalidate old, issue new ───
+    await redis.delete(f"refresh:{user_id}:{session_id}")
+
     token_data = {
         "sub": str(user.id),
         "shop_id": str(user.shop_id),
@@ -301,7 +304,20 @@ async def refresh_access_token(refresh_token: str, db: AsyncSession) -> str:
         "shop_status": shop_status,
         "session_id": session_id,
     }
-    return create_access_token(token_data)
+    new_access_token = create_access_token(token_data)
+    new_refresh_token = create_refresh_token(token_data)
+
+    # Store new refresh token in Redis
+    await redis.setex(
+        f"refresh:{user_id}:{session_id}",
+        60 * 60 * 24 * 7,
+        new_refresh_token,
+    )
+
+    return {
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
+    }
 
 
 async def logout_user(user_id: str, session_id: str | None = None) -> None:
@@ -324,7 +340,6 @@ async def forgot_password(email: str, db: AsyncSession) -> None:
     if not user:
         return
 
-    import secrets
     token = secrets.token_urlsafe(32)
     
     redis = await get_redis()
@@ -391,10 +406,8 @@ async def send_force_logout_otp(email: str, db: AsyncSession) -> None:
     if not user:
         return
 
-    import random
-    from app.modules.notifications.email import EmailService
-
-    otp = f"{random.randint(0, 999999):06d}"
+    # CRITICAL FIX: Use cryptographically secure RNG
+    otp = f"{secrets.randbelow(1_000_000):06d}"
     redis = await get_redis()
     await redis.setex(f"force_logout_otp:{email}", 60 * 10, otp)  # 10 minutes
 
@@ -412,10 +425,10 @@ async def force_logout_others_and_login(email: str, otp: str, password: str, db:
     Verify the force-logout OTP + password, evict all existing sessions for this
     user from Redis, then issue a brand-new session. Returns the same shape as login_user().
     """
-    # Verify OTP
+    # Verify OTP — constant-time comparison
     redis = await get_redis()
     stored_otp = await redis.get(f"force_logout_otp:{email}")
-    if not stored_otp or stored_otp != otp:
+    if not stored_otp or not hmac.compare_digest(str(stored_otp), str(otp)):
         raise UnauthorizedException("Invalid or expired OTP. Please request a new one.")
 
     # Verify credentials

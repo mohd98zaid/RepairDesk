@@ -179,7 +179,7 @@ test.describe('Session Management', () => {
   test('should show session terminated message when token expires', async ({ page }) => {
     // Clear auth state
     await page.context().clearCookies();
-    await page.context().clearLocalStorage();
+    await page.evaluate(() => localStorage.clear());
 
     // Navigate to a protected route
     await page.goto('/dashboard');

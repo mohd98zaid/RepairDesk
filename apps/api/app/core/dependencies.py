@@ -10,6 +10,7 @@ from app.core.db import get_db
 from app.core.exceptions import ForbiddenException, UnauthorizedException
 from app.core.security import decode_token
 from app.modules.shops.models import Shop
+from app.modules.users.models import User
 
 # Inactivity timeout: force logout after this many seconds of no API activity
 _INACTIVITY_TIMEOUT_SECONDS = 12 * 60 * 60  # 12 hours
@@ -18,17 +19,26 @@ _INACTIVITY_TIMEOUT_SECONDS = 12 * 60 * 60  # 12 hours
 async def get_current_user(
     request: Request,
     authorization: Annotated[str | None, Header()] = None,
+    repairdesk_access: str | None = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    Extract and validate the JWT Bearer token from the Authorization header.
-    Returns the decoded token payload including user_id, shop_id, role.
-    Also enforces shop health/status (BLOCKED, RESTRICTED, etc).
-    """
-    if not authorization or not authorization.startswith("Bearer "):
-        raise UnauthorizedException("Missing or invalid Authorization header.")
+    Extract and validate the JWT from:
+    1. httpOnly cookie (repairdesk_access) — PRIMARY
+    2. Authorization: Bearer header — FALLBACK
 
-    token = authorization.split(" ", 1)[1]
+    Validates user.shop_id from DATABASE, not from the JWT.
+    This prevents horizontal privilege escalation via forged tokens.
+    """
+    # Determine token source (cookie takes priority)
+    token = None
+    if repairdesk_access:
+        token = repairdesk_access
+    elif authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ", 1)[1]
+
+    if not token:
+        raise UnauthorizedException("Missing authentication token.")
     try:
         payload = decode_token(token)
     except JWTError:
@@ -38,32 +48,39 @@ async def get_current_user(
         raise UnauthorizedException("Invalid token type.")
 
     user_id = payload.get("sub")
-    shop_id = payload.get("shop_id")
-    role = payload.get("role")
-
     session_id = payload.get("session_id")
 
-    if not user_id or not shop_id or not role:
+    if not user_id:
         raise UnauthorizedException("Token payload is incomplete.")
 
     try:
         user_id_uuid = UUID(user_id)
-        shop_id_uuid = UUID(shop_id)
     except ValueError:
         raise UnauthorizedException("Invalid token payload format.")
 
+    # ─── MULTI-TENANT ISOLATION: Always read shop_id from DB, never trust JWT ──
+    result = await db.execute(
+        select(User.shop_id, User.is_active, User.role)
+        .where(User.id == user_id_uuid)
+    )
+    user_row = result.one_or_none()
+
+    if not user_row or not user_row.is_active:
+        raise UnauthorizedException("User not found or inactive.")
+
+    shop_id_uuid = user_row.shop_id
+    role = str(user_row.role.value) if hasattr(user_row.role, "value") else str(user_row.role)
+
     # ─── REAL-TIME SHOP STATUS ENFORCEMENT ───
-    # We check the database status on every request to ensure immediate enforcement
-    # of blocks/restrictions even if the user still has a valid token.
-    result = await db.execute(select(Shop.shop_status).where(Shop.id == shop_id_uuid))
-    shop_status = result.scalar_one_or_none()
+    shop_result = await db.execute(select(Shop.shop_status).where(Shop.id == shop_id_uuid))
+    shop_status = shop_result.scalar_one_or_none()
 
     if not shop_status:
         raise ForbiddenException("Shop not found.")
 
     if shop_status == "BLOCKED":
         raise ForbiddenException("This shop has been BLOCKED. Please contact support.")
-    
+
     if shop_status == "INACTIVE":
         raise ForbiddenException("This shop account is inactive.")
 
@@ -76,7 +93,7 @@ async def get_current_user(
                 "Please contact support to restore full access."
             )
 
-    # Refresh the inactivity timer — if silent for 12h, refresh will be denied
+    # Refresh the inactivity timer
     await _touch_activity(user_id, session_id)
 
     return {

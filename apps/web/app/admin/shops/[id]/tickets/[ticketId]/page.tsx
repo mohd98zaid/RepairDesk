@@ -66,12 +66,6 @@ export default function AdminTicketDetailPage() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const token = localStorage.getItem('adminToken');
-        if (!token) {
-            window.location.href = '/admin/login';
-            return;
-        }
-
         getShopTicket(shopId, ticketId)
             .then(setTicket)
             .catch(() => { /* handled in ui */ })

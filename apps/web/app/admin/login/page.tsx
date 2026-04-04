@@ -16,8 +16,8 @@ export default function AdminLoginPage() {
         setError('');
         setLoading(true);
         try {
-            const data = await adminLogin(email, password);
-            localStorage.setItem('adminToken', data.access_token);
+            await adminLogin(email, password);
+            // Token is set as httpOnly cookie by the server — no localStorage
             router.push('/admin/dashboard');
         } catch {
             setError('Invalid admin credentials. Please try again.');

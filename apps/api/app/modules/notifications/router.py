@@ -1,9 +1,10 @@
 import asyncio
 import json
 import logging
+import secrets
 import uuid
 from typing import AsyncGenerator
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Cookie, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from jose import JWTError
 from sqlalchemy import select
@@ -11,33 +12,71 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.db import AsyncSessionLocal
 from app.core.security import decode_token
+from app.core.redis import get_redis
 from app.modules.inventory.models import InventoryItem
 from app.modules.tickets.models import Ticket
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 logger = logging.getLogger(__name__)
 
 
-async def _get_sse_user(token: str | None = Query(None)) -> dict:
+@router.post("/sse-token", status_code=200)
+async def create_sse_token(
+    request: Request,
+    repairdesk_access: str | None = Cookie(default=None),
+):
     """
-    Authenticate SSE connections via query parameter token.
-    EventSource API does not support custom headers, so we accept the token
-    as a query param. This is safe over HTTPS since the token is encrypted in transit.
+    Issue a short-lived (60s) single-use SSE token.
+    The client fetches this via normal authenticated API call (Cookie),
+    then opens EventSource with ?sse_token=... instead of ?token=<JWT>.
+
+    This prevents the access JWT from appearing in server logs, browser history,
+    and Referer headers.
     """
+    authorization = request.headers.get("Authorization")
+    token = None
+    if repairdesk_access:
+        token = repairdesk_access
+    elif authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ", 1)[1]
+
     if not token:
-        raise HTTPException(status_code=401, detail="Missing token.")
+        raise HTTPException(status_code=401, detail="Missing authentication token.")
+
     try:
         payload = decode_token(token)
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token.")
     if payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Invalid token type.")
+
     user_id = payload.get("sub")
     shop_id = payload.get("shop_id")
-    role = payload.get("role")
-    if not user_id or not shop_id or not role:
+    if not user_id or not shop_id:
         raise HTTPException(status_code=401, detail="Token payload is incomplete.")
-    return {"user_id": user_id, "shop_id": shop_id, "role": role}
+
+    # Generate a short-lived SSE token
+    sse_token = secrets.token_urlsafe(32)
+    redis = await get_redis()
+    # Store shop_id + user_id for 60 seconds — single use
+    await redis.setex(f"sse:{sse_token}", 60, json.dumps({"user_id": user_id, "shop_id": shop_id}))
+
+    return {"sse_token": sse_token}
+
+
+async def _validate_sse_token(sse_token: str) -> dict:
+    """Validate a short-lived SSE token and consume it."""
+    redis = await get_redis()
+    raw = await redis.get(f"sse:{sse_token}")
+    if not raw:
+        raise HTTPException(status_code=401, detail="SSE token is invalid or expired.")
+    # Consume the token (single-use)
+    await redis.delete(f"sse:{sse_token}")
+    return json.loads(raw)
 
 
 async def generate_notification_stream(shop_id: uuid.UUID) -> AsyncGenerator[str, None]:
@@ -104,14 +143,17 @@ async def generate_notification_stream(shop_id: uuid.UUID) -> AsyncGenerator[str
 
 @router.get("/stream")
 async def notification_stream(
-    token: str | None = Query(None),
+    sse_token: str | None = Query(None),
 ):
     """
     Subscribe to real-time notification streams via Server-Sent Events.
-    Accepts token as query parameter (EventSource API limitation).
+    Uses a short-lived SSE token (from POST /notifications/sse-token) instead
+    of the access JWT, preventing token leakage in logs and browser history.
     """
-    current_user = await _get_sse_user(token)
-    # Fix #2: JWT payload returns shop_id as a string; cast to uuid.UUID for SQLAlchemy
+    if not sse_token:
+        raise HTTPException(status_code=401, detail="Missing sse_token parameter.")
+
+    current_user = await _validate_sse_token(sse_token)
     try:
         shop_uuid = uuid.UUID(current_user["shop_id"])
     except (ValueError, TypeError):
@@ -120,8 +162,8 @@ async def notification_stream(
         generate_notification_stream(shop_uuid),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive"
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Connection": "keep-alive",
         }
     )
 

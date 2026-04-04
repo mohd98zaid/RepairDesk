@@ -5,13 +5,13 @@ services:
     image: postgres:16-alpine
     restart: always
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-repairdesk}
+      POSTGRES_USER: ${POSTGRES_USER:-repairdesk_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_prod}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      test: [ "CMD-SHELL", "pg_isready -U repairdesk_user -d repairdesk" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -30,8 +30,8 @@ services:
     restart: always
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-repairdesk_access}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-change_me_in_prod}
     volumes:
       - minio_data:/data
 
@@ -39,8 +39,10 @@ services:
     build:
       context: ../../apps/api
       dockerfile: ../../infra/docker/Dockerfile.api
-      target: production
+      target: development
     restart: always
+    ports:
+      - "8000:8000"
     env_file:
       - ../../.env
       - ../../apps/api/.env
@@ -54,8 +56,10 @@ services:
     build:
       context: ../../apps/web
       dockerfile: ../../infra/docker/Dockerfile.web
-      target: production
+      target: development
     restart: always
+    ports:
+      - "3000:3000"
     env_file:
       - ../../apps/web/.env.local
     depends_on:
@@ -63,7 +67,7 @@ services:
 
   nginx:
     image: nginx:alpine
-    restart: always
+    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"

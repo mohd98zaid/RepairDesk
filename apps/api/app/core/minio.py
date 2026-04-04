@@ -1,12 +1,25 @@
 from minio import Minio
 from minio.error import S3Error
 import uuid
+import re
 from datetime import timedelta
 from typing import BinaryIO
 
 from app.core.config import settings
 
 _minio_client: Minio | None = None
+
+# Allowed extensions for ticket image uploads
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+BLOCKED_EXTENSIONS = {
+    ".exe", ".bat", ".cmd", ".com", ".msi", ".scr", ".pif",
+    ".sh", ".bash", ".csh", ".ksh",
+    ".php", ".php3", ".php4", ".php5", ".phtml",
+    ".py", ".rb", ".pl", ".js", ".mjs", ".vbs", ".vbe",
+    ".wsf", ".wsc", ".wsh", ".ps1", ".psm1", ".psd1",
+    ".asp", ".aspx", ".jsp", ".cgi",
+    ".html", ".htm", ".svg",  # SVG can contain scripts
+}
 
 
 def get_minio_client() -> Minio:
@@ -111,11 +124,30 @@ def delete_object(object_key: str) -> None:
 
 
 def build_ticket_image_key(shop_id: str, ticket_id: str, filename: str) -> str:
-    """Build a consistent MinIO object key for ticket images."""
-    import re
+    """Build a consistent MinIO object key for ticket images.
+    Validates the file extension and rejects dangerous file types.
+    """
     # Sanitize: strip path separators, keep only basename
     safe_filename = re.sub(r"[^\w\-.]", "_", filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1])
     ext = safe_filename.rsplit(".", 1)[-1].lower() if "." in safe_filename else "jpg"
+    ext_with_dot = f".{ext}"
+
+    # SECURITY: Reject blocked executable/script extensions
+    if ext_with_dot in BLOCKED_EXTENSIONS:
+        from app.core.exceptions import ForbiddenException
+        raise ForbiddenException(
+            f"File type '{ext}' is not allowed for security reasons. "
+            f"Allowed: {', '.join(sorted(ALLOWED_IMAGE_EXTENSIONS))}"
+        )
+
+    # SECURITY: Only allow known safe image extensions
+    if ext_with_dot not in ALLOWED_IMAGE_EXTENSIONS:
+        from app.core.exceptions import ForbiddenException
+        raise ForbiddenException(
+            f"Unsupported file type '.{ext}'. "
+            f"Allowed: {', '.join(sorted(ALLOWED_IMAGE_EXTENSIONS))}"
+        )
+
     return f"{shop_id}/tickets/{ticket_id}/{uuid.uuid4().hex}.{ext}"
 
 

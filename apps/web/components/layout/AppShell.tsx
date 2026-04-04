@@ -28,7 +28,6 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { MonitorSmartphone } from "lucide-react";
-import { isTokenExpired } from "@/lib/api/client";
 import { useAuthStore } from "@/store/authStore";
 import { api } from "@/lib/api/client";
 import { clsx } from "clsx";
@@ -132,29 +131,44 @@ function NotificationsBell({
     }, []);
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (!token) return;
+        const api = require('@/lib/api/client').api;
+        if (!api) return;
 
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-        const evtSource = new EventSource(`${baseUrl}/notifications/stream?token=${token}`);
+        let evtSource: EventSource | null = null;
 
-        evtSource.onmessage = (event) => {
+        async function connect() {
             try {
-                const data = JSON.parse(event.data);
-                if (data && data.notifications) {
-                    setNotifs(data.notifications);
-                }
-            } catch (err) {
-                console.error("Failed to parse SSE notification chunk", err);
-            }
-        };
+                // Fetch a short-lived SSE token via authenticated API call
+                const { data } = await api.post('/notifications/sse-token');
+                const sseToken = data.sse_token;
 
-        evtSource.onerror = (err) => {
-            console.error("SSE connection error", err);
-        };
+                const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+                evtSource = new EventSource(`${baseUrl}/notifications/stream?sse_token=${sseToken}`);
+
+                evtSource.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data && data.notifications) {
+                            setNotifs(data.notifications);
+                        }
+                    } catch (err) {
+                        console.error("Failed to parse SSE notification chunk", err);
+                    }
+                };
+
+                evtSource.onerror = (err) => {
+                    console.error("SSE connection error", err);
+                    evtSource?.close();
+                };
+            } catch (err) {
+                console.error("Failed to get SSE token", err);
+            }
+        }
+
+        connect();
 
         return () => {
-            evtSource.close();
+            evtSource?.close();
         };
     }, []);
 
@@ -523,8 +537,6 @@ function SessionEjectedModal({ onDismiss }: { onDismiss: () => void }) {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 // Poll every 15 seconds so admin session kills take effect quickly
 const HEARTBEAT_INTERVAL_MS = 15_000;
-// Delay before the very first heartbeat — increased to 30s to ensure
-// cross-origin httpOnly cookie is fully committed by the browser.
 const HEARTBEAT_WARMUP_MS = 30_000;
 
 function useSessionHeartbeat(onEvicted: () => void) {
@@ -537,32 +549,20 @@ function useSessionHeartbeat(onEvicted: () => void) {
         async function heartbeat() {
             if (destroyed) return;
 
-            // Skip heartbeat if no access token is stored
+            // Skip heartbeat if no user is logged in
             try {
                 const raw = localStorage.getItem("repairdesk-auth");
                 if (!raw) return;
                 const { state } = JSON.parse(raw);
-                if (!state?.accessToken) return;
+                if (!state?.user) return; // Only check user object, no token
             } catch { return; }
 
             try {
-                // Try to get refresh token from localStorage as fallback
-                let body = '{}';
-                try {
-                    const raw = localStorage.getItem("repairdesk-auth");
-                    if (raw) {
-                        const { state } = JSON.parse(raw);
-                        if (state?.refreshToken) {
-                            body = JSON.stringify({ refresh_token: state.refreshToken });
-                        }
-                    }
-                } catch { /* ignore */ }
-
+                // Tokens are in httpOnly cookies — just send with credentials
                 const res = await fetch(`${API_URL}/auth/refresh`, {
                     method: 'POST',
                     credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
-                    body,
                 });
                 if (res.status === 401) {
                     if (!destroyed) onEvictedRef.current();
@@ -617,7 +617,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     // Using a separate effect so Zustand's persist middleware has time to rehydrate.
     useEffect(() => {
         if (!mounted) return;
-        // isAuthenticated() reads from the already-rehydrated Zustand store
+        // Check if user is logged in by looking for user object (no token check needed)
         const authRaw = localStorage.getItem("repairdesk-auth");
         if (!authRaw) {
             router.replace("/login");
@@ -625,7 +625,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }
         try {
             const { state } = JSON.parse(authRaw);
-            if (!state?.accessToken) {
+            if (!state?.user) {
                 localStorage.removeItem("repairdesk-auth");
                 router.replace("/login");
             }
@@ -745,7 +745,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return (
         <div className="min-h-[100dvh] flex bg-background">
             {/* Desktop Sidebar */}
-            <aside className="hidden md:flex flex-col w-64 border-r border-border bg-card p-4 gap-2 h-screen overflow-y-auto sticky top-0">
+            <aside className="hidden md:flex flex-col w-64 border-r border-border bg-card p-4 gap-2 h-screen overflow-y-auto sticky top-0 z-50">
                 {/* Logo + Bell */}
                 <div className="flex items-center gap-2.5 mb-4 px-1">
                     <div className="bg-white rounded-lg w-[140px] xl:w-[160px] h-10 xl:h-12 flex items-center justify-center overflow-hidden flex-shrink-0 px-2 py-1">

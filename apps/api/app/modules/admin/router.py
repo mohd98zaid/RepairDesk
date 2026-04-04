@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy import func, select
@@ -37,17 +37,35 @@ _oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/admin/auth/login", auto_
 def _create_admin_token() -> str:
     expire = datetime.now(timezone.utc) + timedelta(hours=_ADMIN_TOKEN_EXPIRE_HOURS)
     return jwt.encode(
-        {"sub": "super_admin", "role": "SUPER_ADMIN", "exp": expire},
+        {
+            "sub": "super_admin",
+            "role": "SUPER_ADMIN",
+            "exp": expire,
+            "iss": "repairdesk-api",
+            "aud": "repairdesk-clients",
+            "jti": str(uuid.uuid4()),
+        },
         settings.jwt_secret,
         algorithm=settings.jwt_algorithm,
     )
 
 
-async def _get_admin_user(token: str = Depends(_oauth2_scheme)) -> dict:
-    if not token:
+async def _get_admin_user(
+    token: str = Depends(_oauth2_scheme),
+    repairdesk_admin: str | None = Cookie(default=None),
+) -> dict:
+    # Accept token from httpOnly cookie (primary) or Authorization header (fallback)
+    effective_token = repairdesk_admin or token
+    if not effective_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(
+            effective_token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
+            issuer="repairdesk-api",
+            audience="repairdesk-clients",
+        )
         if payload.get("role") != "SUPER_ADMIN":
             raise HTTPException(status_code=403, detail="Admin access required")
         return payload
@@ -60,24 +78,39 @@ AdminUser = Depends(_get_admin_user)
 
 # ─────────────────────────── Migrations (TEMPORARY) ───────────────────────────
 
-@router.get("/run-migrations")
-async def run_migrations_endpoint(command: str = "upgrade head"):
-    """Run alembic command and return the output."""
+@router.post("/run-migrations")
+async def run_migrations_endpoint(
+    admin: dict = AdminUser,
+    command: str = "upgrade head",
+):
+    """Run alembic migration. REQUIRES admin auth. Only allows 'upgrade head' or 'downgrade -1'."""
     import subprocess
     import sys
     import os
-    import shlex
+
+    # Whitelist: only safe alembic commands are permitted
+    ALLOWED_COMMANDS = {"upgrade head", "downgrade -1", "current", "history"}
+    if command not in ALLOWED_COMMANDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Command not allowed. Permitted: {', '.join(sorted(ALLOWED_COMMANDS))}",
+        )
     try:
         alembic_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         executable = sys.executable
-        args = shlex.split(command)
-        result = subprocess.run([executable, "-m", "alembic"] + args, cwd=alembic_dir, capture_output=True, text=True)
+        args = command.split()  # safe: we already whitelisted the values
+        result = subprocess.run(
+            [executable, "-m", "alembic"] + args,
+            cwd=alembic_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        await _emit_audit("RUN_MIGRATION", admin.get("email", "admin"), "", f"Command: {command}")
         return {
-            "cwd": alembic_dir,
-            "executable": executable,
             "returncode": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
+            "stdout": result.stdout[-2000:],  # truncate
+            "stderr": result.stderr[-2000:],
         }
     except Exception as e:
         return {"error": str(e)}
@@ -85,10 +118,13 @@ async def run_migrations_endpoint(command: str = "upgrade head"):
 
 # ─────────────────────────── Login ───────────────────────────
 
+ADMIN_COOKIE_NAME = "repairdesk_admin"
+_ADMIN_COOKIE_SECURE = settings.is_production
+
 @router.post("/auth/login")
 @limiter.limit("5/minute")
-async def admin_login(request: Request, body: dict):
-    """Authenticate with platform admin credentials from .env."""
+async def admin_login(request: Request, body: dict, response: Response):
+    """Authenticate with platform admin credentials from .env. Token set as httpOnly cookie."""
     import hmac as _hmac
     email = body.get("email", "").strip().lower()
     password = body.get("password", "")
@@ -102,11 +138,26 @@ async def admin_login(request: Request, body: dict):
         raise HTTPException(status_code=401, detail="Invalid admin credentials")
 
     token = _create_admin_token()
+    # Set admin token as httpOnly cookie — never in response body for JS access
+    response.set_cookie(
+        key=ADMIN_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=_ADMIN_COOKIE_SECURE,
+        samesite="none" if _ADMIN_COOKIE_SECURE else "lax",
+        max_age=_ADMIN_TOKEN_EXPIRE_HOURS * 3600,
+        path="/",
+    )
     return {
-        "access_token": token,
-        "token_type": "bearer",
         "user": {"email": settings.admin_email, "role": "SUPER_ADMIN"},
     }
+
+
+@router.post("/auth/logout", status_code=204)
+async def admin_logout(response: Response, admin: dict = AdminUser):
+    """Clear admin auth cookie."""
+    samesite = "none" if _ADMIN_COOKIE_SECURE else "lax"
+    response.delete_cookie(key=ADMIN_COOKIE_NAME, path="/", secure=_ADMIN_COOKIE_SECURE, samesite=samesite)
 
 
 @router.get("/auth/me")
@@ -998,8 +1049,8 @@ async def restrict_shop(
     """Restrict shop: owner can still log in but cannot create/modify data (read-only)."""
     shop = await _get_shop_or_404(shop_id, db)
     shop.shop_status = "RESTRICTED"
-    shop.is_active = True  # still accessible, just read-only
-    # Fix #5: get_db() commits on exit — no manual commit needed
+    shop.is_active = True
+    await _emit_audit("RESTRICT_SHOP", admin.get("email", "admin"), str(shop_id), "")
     return {"id": str(shop.id), "shop_status": shop.shop_status}
 
 
@@ -1012,8 +1063,8 @@ async def block_shop(
     """Block shop: owner cannot log in at all. Auth will return 403."""
     shop = await _get_shop_or_404(shop_id, db)
     shop.shop_status = "BLOCKED"
-    shop.is_active = True  # keeps data but login is rejected
-    # Fix #5: get_db() commits on exit — no manual commit needed
+    shop.is_active = True
+    await _emit_audit("BLOCK_SHOP", admin.get("email", "admin"), str(shop_id), "")
     return {"id": str(shop.id), "shop_status": shop.shop_status}
 
 
@@ -1027,7 +1078,7 @@ async def deactivate_shop(
     shop = await _get_shop_or_404(shop_id, db)
     shop.shop_status = "INACTIVE"
     shop.is_active = False
-    # Fix #5: get_db() commits on exit
+    await _emit_audit("DEACTIVATE_SHOP", admin.get("email", "admin"), str(shop_id), "")
     return {"id": str(shop.id), "shop_status": shop.shop_status}
 
 
@@ -1041,7 +1092,7 @@ async def reactivate_shop(
     shop = await _get_shop_or_404(shop_id, db)
     shop.shop_status = "ACTIVE"
     shop.is_active = True
-    # Fix #5: get_db() commits on exit
+    await _emit_audit("REACTIVATE_SHOP", admin.get("email", "admin"), str(shop_id), "")
     return {"id": str(shop.id), "shop_status": shop.shop_status}
 
 
