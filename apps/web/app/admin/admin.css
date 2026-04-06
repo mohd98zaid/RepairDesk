@@ -6,7 +6,7 @@
 
 /* ── Layout ─────────────────────────────────────────────────────────────────── */
 .admin-layout { display: flex; min-height: 100vh; background: #0f1117; color: #e2e8f0; }
-.admin-main   { flex: 1; padding: 32px; overflow-y: auto; min-width: 0; }
+.admin-main   { flex: 1; padding: 32px; overflow-y: auto; min-width: 0; margin-left: 220px; }
 .admin-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
 .admin-header h1 { font-size: 24px; font-weight: 700; color: #fff; margin: 0; }
 .admin-header p  { font-size: 14px; color: #64748b; margin: 4px 0 0; }
@@ -81,7 +81,7 @@
 .admin-pagination span { font-size: 14px; color: #64748b; }
 
 /* ── Admin Nav sidebar (desktop) ────────────────────────────────────────────── */
-.admin-nav { width: 220px; min-height: 100vh; background: var(--admin-nav-bg, #0a0a10); border-right: 1px solid rgba(255,255,255,0.07); display: flex; flex-direction: column; padding: 20px 0; flex-shrink: 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.admin-nav { width: 220px; background: var(--admin-nav-bg, #0a0a10); border-right: 1px solid rgba(255,255,255,0.07); display: flex; flex-direction: column; padding: 20px 0; flex-shrink: 0; position: fixed; top: 0; left: 0; bottom: 0; height: 100vh; overflow-y: auto; z-index: 50; }
 .admin-nav__brand { display: flex; align-items: center; gap: 10px; padding: 8px 16px 20px; color: #a78bfa; font-size: 14px; font-weight: 700; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 8px; }
 .admin-nav__brand small { color: #475569; font-size: 11px; font-weight: 400; display: block; margin-top: 1px; }
 .admin-nav__links { display: flex; flex-direction: column; gap: 2px; padding: 0 10px; flex: 1; }
@@ -126,7 +126,7 @@
 
     /* Layout shifts */
     .admin-layout { flex-direction: column; }
-    .admin-main   { padding: 16px 14px 90px; /* bottom pad for tab bar */ }
+    .admin-main   { margin-left: 0; padding: 16px 14px 90px; /* bottom pad for tab bar */ }
 
     /* Mobile top bar */
     .admin-mobile-topbar {
