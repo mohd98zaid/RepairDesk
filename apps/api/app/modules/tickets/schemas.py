@@ -40,6 +40,7 @@ class TicketCreate(BaseModel):
     pre_repair_checklist: dict | None = None
     customer_signature: str | None = None
     warranty_days: int | None = None
+    sla_deadline: datetime | None = None
 
 
 class TicketUpdate(BaseModel):
@@ -51,11 +52,17 @@ class TicketUpdate(BaseModel):
     pre_repair_checklist: dict | None = None
     customer_signature: str | None = None
     warranty_days: int | None = None
+    sla_deadline: datetime | None = None
 
 
 class TicketStatusUpdate(BaseModel):
     status: str
     notes: str | None = None
+
+
+class TicketAssignUpdate(BaseModel):
+    assigned_to: UUID | None
+
 
 
 class PresignRequest(BaseModel):
@@ -123,6 +130,7 @@ class TicketSummaryResponse(BaseModel):
     assigned_to: AssignedUser | None
     created_at: datetime
     updated_at: datetime
+    sla_deadline: datetime | None = None
     warranty_days: int | None = None
     model_config = {"from_attributes": True}
 
@@ -158,8 +166,11 @@ class TicketListResponse(BaseModel):
     profit: str | None = None
     created_at: datetime
     updated_at: datetime
+    sla_deadline: datetime | None = None
     created_by: str | None = None
     created_by_name: str | None = None
+    assigned_to: str | None = None
+    assigned_to_name: str | None = None
     model_config = {"from_attributes": True}
 
 

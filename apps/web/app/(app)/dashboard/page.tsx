@@ -5,7 +5,7 @@ import Link from "next/link";
 import { fmtTicketId } from "@/lib/utils/ticketId";
 import {
     Ticket, Package, IndianRupee, Users, Clock,
-    CheckCircle, AlertTriangle, TrendingUp, Wrench
+    CheckCircle, AlertTriangle, TrendingUp, Wrench, Activity, User
 } from "lucide-react";
 import { ticketsApi } from "@/lib/api/tickets";
 import { inventoryApi } from "@/lib/api/inventory";
@@ -19,6 +19,7 @@ interface KPI {
     resolved_today: number;
     total_revenue: string;
     low_stock: number;
+    sla_rate: number;
 }
 
 interface LowStockItem {
@@ -44,14 +45,52 @@ function KPICard({
     href?: string;
 }) {
     const inner = (
-        <div className="bg-card h-full w-full rounded-xl p-3.5 sm:p-5 flex flex-col sm:flex-row items-start gap-2.5 sm:gap-4 transition border border-border shadow-sm hover:shadow-md hover:border-primary/40">
-            <div className={`p-2.5 sm:p-3 rounded-xl ${color}`}>
-                <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${color.includes('bg-') && !color.includes('bg-muted') ? 'text-white' : 'text-foreground'}`} />
+        <div
+            className="relative group h-full overflow-hidden rounded-2xl bg-card border border-border p-3.5 sm:p-5 flex flex-col items-start justify-between min-h-[105px] sm:min-h-[140px]"
+            style={{
+                transition: 'transform 0.22s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.22s ease, border-color 0.22s ease, background 0.25s ease',
+                boxShadow: 'var(--glass-shadow)',
+            }}
+            onMouseEnter={e => {
+                const el = e.currentTarget;
+                el.style.transform = 'translateY(-4px) scale(1.018)';
+                el.style.boxShadow = '0 20px 56px rgba(99,102,241,0.22), 0 6px 20px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.45)';
+                el.style.borderColor = 'rgba(99,102,241,0.55)';
+            }}
+            onMouseLeave={e => {
+                const el = e.currentTarget;
+                el.style.transform = '';
+                el.style.boxShadow = 'var(--glass-shadow)';
+                el.style.borderColor = '';
+            }}
+        >
+            {/* Ambient background glow — intensifies on hover */}
+            <div className={`absolute -top-12 -right-12 w-36 h-36 rounded-full blur-[55px] opacity-10 group-hover:opacity-40 transition-opacity duration-500 pointer-events-none ${color}`} />
+
+            {/* Shine sweep on hover */}
+            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
+                style={{
+                    background: 'linear-gradient(125deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.18) 50%, rgba(255,255,255,0) 70%)',
+                    backgroundSize: '200% 100%',
+                    animation: 'shineSweep 0.6s ease forwards',
+                }}
+            />
+
+            <div className="flex w-full items-start justify-between z-10 sm:mb-2">
+                <div
+                    className={`p-2 sm:p-3 rounded-xl shadow-inner transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg ${color}`}
+                    style={{ transition: 'transform 0.22s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.22s ease' }}
+                >
+                    <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${color.includes('bg-') && !color.includes('bg-muted') ? 'text-white' : 'text-foreground'}`} />
+                </div>
             </div>
-            <div className="min-w-0 flex-1">
-                <p className="text-muted-foreground text-[10px] sm:text-xs font-medium uppercase tracking-wide truncate">{label}</p>
-                <p className="text-lg sm:text-2xl font-bold text-foreground mt-0.5 truncate">{value}</p>
-                {sub && <p className="text-muted-foreground text-[10px] sm:text-xs mt-0.5 truncate">{sub}</p>}
+
+            <div className="z-10 w-full mt-auto">
+                <p className="text-muted-foreground text-[10px] sm:text-xs font-semibold uppercase tracking-wider mt-2 sm:mt-3 mb-0.5 sm:mb-1 opacity-80 line-clamp-1 group-hover:opacity-100 transition-opacity">{label}</p>
+                <div className="flex flex-col items-start">
+                    <p className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight drop-shadow-sm leading-none group-hover:text-primary transition-colors duration-300">{value}</p>
+                    {sub && <p className="text-muted-foreground text-[10px] sm:text-xs truncate max-w-full mt-0.5 sm:mt-1">{sub}</p>}
+                </div>
             </div>
         </div>
     );
@@ -63,7 +102,7 @@ export default function DashboardPage() {
     const [kpi, setKpi] = useState<KPI | null>(null);
     const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
     const [recentTickets, setRecentTickets] = useState<
-        Array<{ id: string; ticket_number: number; status: string; device_type: string; created_at: string }>
+        Array<{ id: string; ticket_number: number; status: string; device_type: string; created_at: string; assigned_to_name?: string | null; sla_deadline?: string | null }>
     >([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
@@ -132,12 +171,30 @@ export default function DashboardPage() {
                 console.warn("Revenue breakdown failed (non-critical):", revenueRes.reason);
             }
 
+            let slaCount = 0;
+            let slaTotal = 0;
+            allItems.forEach((t: any) => {
+                if (t.sla_deadline) {
+                    slaTotal++;
+                    const isClosed = t.status === "DELIVERED" || t.status === "READY";
+                    const deadlineDate = new Date(t.sla_deadline);
+                    if (isClosed) {
+                        const completedAt = new Date(t.updated_at);
+                        if (completedAt <= deadlineDate) slaCount++;
+                    } else {
+                        if (deadlineDate >= new Date()) slaCount++;
+                    }
+                }
+            });
+            const sla_rate = slaTotal > 0 ? Math.round((slaCount / slaTotal) * 100) : 100;
+
             setKpi({
                 open,
                 ready,
                 resolved_today,
                 total_revenue: totalRevenue,
                 low_stock: lowStockCount,
+                sla_rate,
             });
             setRecentTickets(ticketRes.value.items.slice(0, 5));
         } catch (err) {
@@ -162,9 +219,9 @@ export default function DashboardPage() {
     );
 
     return (
-        <div className="p-4 sm:p-6 max-w-6xl mx-auto">
+        <div className="w-full max-w-full m-0 p-4 sm:p-6 lg:p-8" style={{ boxSizing: 'border-box' }}>
             {/* Header */}
-            <div className="mb-7">
+            <div className="mb-7 mt-4">
                 <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
                 <p className="text-muted-foreground text-sm">
                     {new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
@@ -173,22 +230,21 @@ export default function DashboardPage() {
 
             {/* KPI Cards */}
             {loading ? (
-                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 mb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 [@media(min-width:900px)]:grid-cols-5 gap-3 sm:gap-4 mb-4">
                     {Array.from({ length: 6 }).map((_, i) => (
                         <div key={i} className="bg-muted rounded-xl p-5 h-28 sm:h-24 animate-pulse" />
                     ))}
                 </div>
             ) : (
-                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 mb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 [@media(min-width:900px)]:grid-cols-5 gap-3 sm:gap-4 mb-4">
                     <KPICard icon={Clock} label="Open Tickets" value={kpi?.open ?? 0}
                         sub="Active repairs" color="bg-indigo-600" href="/tickets" />
                     <KPICard icon={CheckCircle} label="Ready for Pickup" value={kpi?.ready ?? 0}
                         sub="Customer to collect" color="bg-emerald-600" href="/tickets?status=READY" />
                     <KPICard icon={Wrench} label="Resolved Today" value={kpi?.resolved_today ?? 0}
                         sub="Delivered today" color="bg-teal-600" href="/tickets?status=DELIVERED" />
-                    <KPICard icon={IndianRupee} label="Total Revenue"
-                        value={`₹${Number(kpi?.total_revenue ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`}
-                        sub="Combined all-time revenue" color="bg-emerald-600" href="/reports/revenue" />
+                    <KPICard icon={Activity} label="SLA Compliance" value={`${kpi?.sla_rate ?? 100}%`}
+                        sub="Tickets meeting deadlines" color={((kpi?.sla_rate ?? 100) < 90) ? "bg-amber-600" : "bg-emerald-600"} href="/tickets" />
                     <KPICard icon={AlertTriangle} label="Low Stock Items" value={kpi?.low_stock ?? 0}
                         sub="Needs restocking" color={kpi?.low_stock ? "bg-amber-600 !text-white" : "bg-muted"} href="/inventory" />
                 </div>
@@ -280,14 +336,33 @@ export default function DashboardPage() {
                         <Link
                             key={t.id}
                             href={`/tickets/${t.id}`}
-                            className="flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-0 hover:bg-muted/50 transition"
+                            className="flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-0 hover:bg-muted/50 transition group"
                         >
                             <span className="text-muted-foreground text-xs font-mono w-20">{fmtTicketId(t.ticket_number)}</span>
-                            <p className="flex-1 text-foreground text-sm truncate">{t.device_type}</p>
-                            <StatusBadge status={t.status} />
-                            <span className="text-muted-foreground text-xs hidden sm:block">
-                                {new Date(t.created_at).toLocaleDateString()}
-                            </span>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-foreground text-sm truncate flex items-center gap-2">
+                                    {t.device_type}
+                                    {t.assigned_to_name && (
+                                        <span className="hidden sm:inline-flex items-center gap-1 bg-muted px-1.5 rounded text-[10px] text-muted-foreground border border-border">
+                                            <User className="w-3 h-3" /> {t.assigned_to_name}
+                                        </span>
+                                    )}
+                                </p>
+                                <span className="text-[10px] sm:hidden text-muted-foreground flex gap-2">
+                                    {t.assigned_to_name && <span>{t.assigned_to_name}</span>}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2 sm:gap-4">
+                                {t.sla_deadline && (
+                                    <span className={`hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold border ${new Date(t.sla_deadline) < new Date() ? 'bg-danger/10 text-danger border-danger/20' : t.status === 'DELIVERED' ? 'bg-success/10 text-success border-success/20' : 'bg-warning/10 text-warning border-warning/20'}`}>
+                                        SLA: {new Date(t.sla_deadline).toLocaleDateString([], { month: 'short', day: 'numeric'})}
+                                    </span>
+                                )}
+                                <StatusBadge status={t.status} />
+                                <span className="text-muted-foreground text-xs hidden lg:block w-24 text-right">
+                                    {new Date(t.created_at).toLocaleDateString()}
+                                </span>
+                            </div>
                         </Link>
                     ))
                 )}

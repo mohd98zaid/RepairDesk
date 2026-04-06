@@ -31,6 +31,7 @@ const schema = z.object({
         })
     ).optional(),
     warranty_days: z.string().optional(),
+    sla_deadline: z.string().optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -85,11 +86,9 @@ export default function NewTicketPage() {
                 router.push("/onboarding?from=tickets");
             }
         }).catch(() => {});
-        // Load team members for technician assignment (Owners only)
-        if (isOwner) {
-            teamApi.list().then(setTeam).catch(() => {});
-        }
-    }, [router, isOwner]);
+        
+        teamApi.list().then(setTeam).catch(() => {});
+    }, [router]);
 
     const initialCharges = watch("initial_charges") || [];
 
@@ -121,6 +120,7 @@ export default function NewTicketPage() {
                 customer_signature: signature,
                 warranty_days: data.warranty_days ? parseInt(data.warranty_days, 10) : undefined,
                 assigned_to: assignedTo || undefined,
+                sla_deadline: data.sla_deadline ? new Date(data.sla_deadline).toISOString() : undefined,
             });
             // Show notify modal instead of immediately redirecting
             setCreatedTicket({
@@ -290,8 +290,8 @@ export default function NewTicketPage() {
                     </div>
                 </div>
 
-                {/* Technician Assignment — Owners only */}
-                {isOwner && team.length > 0 && (
+                {/* Technician Assignment */}
+                {team.length > 0 && (
                     <div className="glass rounded-xl p-5">
                         <h2 className="text-sm font-semibold text-foreground/90 mb-4 flex items-center gap-2">
                             <UserCheck className="w-4 h-4" /> Assign Technician
@@ -346,7 +346,7 @@ export default function NewTicketPage() {
                                 className="w-full px-4 py-2.5 rounded-lg bg-muted border border-border text-foreground placeholder-muted-foreground focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition text-sm"
                             />
                         </div>
-                        <div className="sm:col-span-2">
+                        <div className="sm:col-span-1">
                             <label className="block text-sm font-medium text-foreground/90 mb-1">
                                 Warranty <span className="text-muted-foreground">(optional)</span>
                             </label>
@@ -360,6 +360,16 @@ export default function NewTicketPage() {
                                 <option value="180">6 Months</option>
                                 <option value="365">1 Year</option>
                             </select>
+                        </div>
+                        <div className="sm:col-span-1">
+                            <label className="block text-sm font-medium text-foreground/90 mb-1">
+                                SLA Deadline <span className="text-muted-foreground">(optional)</span>
+                            </label>
+                            <input
+                                {...register("sla_deadline")}
+                                type="datetime-local"
+                                className="w-full px-4 py-2.5 rounded-lg bg-muted border border-border text-foreground placeholder-muted-foreground focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition text-sm flex h-[42px]"
+                            />
                         </div>
                     </div>
                 </div>

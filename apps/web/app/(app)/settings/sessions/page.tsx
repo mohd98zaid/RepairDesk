@@ -12,6 +12,7 @@ interface MySession {
     ttl_seconds: number;
     ttl_max: number;
     created_ago: string;
+    created_at?: string;
     is_current: boolean;
 }
 
@@ -250,7 +251,7 @@ function SessionCard({
                             </span>
                         )}
                         <span className="text-xs text-muted-foreground ml-auto">
-                            Signed in {session.created_ago}
+                            Signed in {session.created_at ? `${new Date(session.created_at).toLocaleString()} (${session.created_ago})` : session.created_ago}
                         </span>
                     </div>
                     <p className="text-xs text-muted-foreground font-mono">

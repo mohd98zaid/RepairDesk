@@ -113,6 +113,8 @@ async def get_my_sessions(current_user: CurrentUser):
                 created_ago = f"{age_seconds // 3600}h ago"
             else:
                 created_ago = f"{age_seconds // 86400}d ago"
+            
+            created_at = (datetime.now(timezone.utc) - timedelta(seconds=age_seconds)).isoformat()
 
             sessions.append({
                 "session_id": session_id,
@@ -120,6 +122,7 @@ async def get_my_sessions(current_user: CurrentUser):
                 "ttl_seconds": ttl,
                 "ttl_max": MAX_TTL,
                 "created_ago": created_ago,
+                "created_at": created_at,
                 "is_current": session_id == current_session_id,
             })
         if cursor == b"0":

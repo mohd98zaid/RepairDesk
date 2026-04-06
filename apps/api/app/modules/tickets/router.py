@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.core.dependencies import CurrentUser, DbSession, OwnerUser
 from app.modules.tickets import service
+from app.modules.activity.router import log_activity
 from app.modules.tickets.schemas import (
     ConfirmUploadRequest,
     PresignRequest,
@@ -13,6 +14,7 @@ from app.modules.tickets.schemas import (
     TicketChargeCreate,
     TicketChargeResponse,
     TicketStatusUpdate,
+    TicketAssignUpdate,
     TicketUpdate,
     PaginatedTickets,
     TicketCreateResponse,
@@ -58,7 +60,7 @@ async def list_tickets(
     from sqlalchemy import select as sa_select
     from app.modules.users.models import User
     raw_items = result["items"]
-    user_ids = list({t.created_by for t in raw_items if t.created_by})
+    user_ids = list({t.created_by for t in raw_items if t.created_by} | {t.assigned_to for t in raw_items if t.assigned_to})
     user_name_map: dict = {}
     if user_ids:
         users_res = await db.execute(sa_select(User.id, User.full_name).where(User.id.in_(user_ids)))
@@ -78,8 +80,11 @@ async def list_tickets(
             "profit": str(t.profit) if t.profit is not None else None,
             "created_at": t.created_at,
             "updated_at": t.updated_at,
+            "sla_deadline": t.sla_deadline,
             "created_by": str(t.created_by) if t.created_by else None,
             "created_by_name": user_name_map.get(t.created_by, "Unknown"),
+            "assigned_to": str(t.assigned_to) if t.assigned_to else None,
+            "assigned_to_name": user_name_map.get(t.assigned_to, None),
         })
     return {**result, "items": items}
 
@@ -93,6 +98,18 @@ async def create_ticket(data: TicketCreate, current_user: CurrentUser, db: DbSes
         data=data,
         db=db,
     )
+
+    await log_activity(
+        db=db,
+        shop_id=current_user["shop_id"],
+        user_id=current_user["user_id"],
+        action="TICKET_CREATED",
+        entity_type="ticket",
+        entity_id=ticket.id,
+        details={"ticket_number": ticket.ticket_number}
+    )
+    await db.commit()
+
     return {
         "id": str(ticket.id),
         "ticket_number": ticket.ticket_number,
@@ -140,12 +157,56 @@ async def update_ticket(
         data=data,
         db=db,
     )
+
+    await log_activity(
+        db=db,
+        shop_id=current_user["shop_id"],
+        user_id=current_user["user_id"],
+        action="TICKET_UPDATED",
+        entity_type="ticket",
+        entity_id=ticket.id,
+    )
+    await db.commit()
+
     return {
         "id": str(ticket.id),
         "ticket_number": ticket.ticket_number,
         "status": ticket.status,
         "final_cost": str(ticket.final_cost) if ticket.final_cost is not None else None,
         "profit": str(ticket.profit) if ticket.profit is not None else None,
+    }
+
+
+@router.patch("/{ticket_id}/assign")
+async def assign_ticket(
+    ticket_id: uuid.UUID,
+    data: TicketAssignUpdate,
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    """Assign a ticket to a specific team member."""
+    # Use our existing service logic to validate and update
+    ticket = await service.update_ticket(
+        shop_id=current_user["shop_id"],
+        ticket_id=ticket_id,
+        data=TicketUpdate(assigned_to=data.assigned_to),
+        db=db,
+    )
+    
+    await log_activity(
+        db=db,
+        shop_id=current_user["shop_id"],
+        user_id=current_user["user_id"],
+        action="TICKET_REASSIGNED" if data.assigned_to else "TICKET_UNASSIGNED",
+        entity_type="ticket",
+        entity_id=ticket_id,
+        details={"assigned_to": str(data.assigned_to) if data.assigned_to else None}
+    )
+    await db.commit()
+    
+    return {
+        "id": str(ticket.id),
+        "assigned_to": str(ticket.assigned_to) if ticket.assigned_to else None
     }
 
 

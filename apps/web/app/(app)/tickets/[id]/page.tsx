@@ -484,6 +484,7 @@ export default function TicketDetailPage() {
     const [changingStatus, setChangingStatus] = useState(false);
     const [statusError, setStatusError] = useState<string | null>(null);
     const [showStatusModal, setShowStatusModal] = useState(false);
+    const [showConditionBlock, setShowConditionBlock] = useState(false);
 
     // Const editing state
     const [editingCost, setEditingCost] = useState(false);
@@ -631,8 +632,8 @@ export default function TicketDetailPage() {
         setAssigningTech(true);
         try {
             const val = userId === "unassign" ? null : userId;
-            // The API expects assigned_to as string or undefined/null.
-            const updated = await ticketsApi.update(id, { assigned_to: val as any });
+            await ticketsApi.assign(id, val);
+            const updated = await ticketsApi.get(id);
             setTicket(updated);
         } catch {
             alert("Failed to assign technician.");
@@ -732,9 +733,14 @@ export default function TicketDetailPage() {
                             <h1 className="text-xl sm:text-2xl font-bold text-foreground">{fmtTicketId(ticket.ticket_number)}</h1>
                             <StatusBadge status={ticket.status} />
                         </div>
-                        <p className="text-muted-foreground font-medium text-sm mt-0.5">
-                            Created {new Date(ticket.created_at).toLocaleDateString()}
-                        </p>
+                        <div className="text-muted-foreground font-medium text-sm mt-0.5 flex flex-wrap gap-x-4">
+                            <span>Created {new Date(ticket.created_at).toLocaleDateString()}</span>
+                            {ticket.sla_deadline && (
+                                <span className={new Date(ticket.sla_deadline) < new Date() ? "text-danger" : ticket.status === 'DELIVERED' ? "text-success" : "text-warning"}>
+                                    SLA: {new Date(ticket.sla_deadline).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                                </span>
+                            )}
+                        </div>
                     </div>
                 </div>
                 {/* Invoice + Print buttons — wrap on mobile */}
@@ -824,7 +830,7 @@ export default function TicketDetailPage() {
                                         <Loader2 className="w-4 h-4 text-primary animate-spin" />
                                     ) : (
                                         <select
-                                            value={(ticket as any).assigned_to || ""}
+                                            value={ticket.assigned_to?.id || ""}
                                             onChange={(e) => handleAssignTech(e.target.value || "unassign")}
                                             className="bg-muted text-foreground text-xs font-medium border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:border-primary shadow-sm"
                                         >
@@ -1133,31 +1139,41 @@ export default function TicketDetailPage() {
 
                     {/* Pre-Repair Checklist & Signature */}
                     {(parsedChecklist || ticket.customer_signature) && (
-                        <div className="bg-card border border-border shadow-sm rounded-xl p-5 space-y-6">
-                            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2 border-b border-border pb-3">
-                                <Check className="w-4 h-4 text-primary" /> Condition & Authorization
-                            </h2>
+                        <div className="bg-card border border-border shadow-sm rounded-xl p-5">
+                            <button 
+                                onClick={() => setShowConditionBlock(p => !p)} 
+                                className="w-full flex items-center justify-between group focus:outline-none"
+                            >
+                                <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                                    <Check className="w-4 h-4 text-primary" /> Condition & Authorization
+                                </h2>
+                                <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${showConditionBlock ? 'rotate-180' : ''}`} />
+                            </button>
 
-                            {parsedChecklist && (
-                                <PreRepairChecklist
-                                    items={parsedChecklist}
-                                    onChange={() => { }}
-                                    readonly={true}
-                                />
-                            )}
-
-                            {ticket.customer_signature && (
-                                <div className="space-y-2 pt-4 border-t border-border">
-                                    <h3 className="text-sm font-semibold text-foreground">Customer Signature</h3>
-                                    <div className="border border-border rounded-xl overflow-hidden bg-white/5 p-2 max-w-sm">
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img
-                                            src={ticket.customer_signature}
-                                            alt="Customer Signature"
-                                            className="w-full h-auto"
+                            {showConditionBlock && (
+                                <div className="mt-5 space-y-6 pt-5 border-t border-border animate-in fade-in slide-in-from-top-2">
+                                    {parsedChecklist && (
+                                        <PreRepairChecklist
+                                            items={parsedChecklist}
+                                            onChange={() => { }}
+                                            readonly={true}
                                         />
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">Signed upon device drop-off</p>
+                                    )}
+
+                                    {ticket.customer_signature && (
+                                        <div className="space-y-2 pt-4 border-t border-border border-dashed">
+                                            <h3 className="text-sm font-semibold text-foreground">Customer Signature</h3>
+                                            <div className="border border-border rounded-xl overflow-hidden bg-white/5 p-2 max-w-sm">
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img
+                                                    src={ticket.customer_signature}
+                                                    alt="Customer Signature"
+                                                    className="w-full h-auto"
+                                                />
+                                            </div>
+                                            <p className="text-xs text-muted-foreground">Signed upon device drop-off</p>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

@@ -7,6 +7,7 @@ from app.core.db import get_db
 from app.core.dependencies import CurrentUser, DbSession
 from app.core.exceptions import UnauthorizedException
 from app.modules.auth import service
+from app.modules.activity.router import log_activity
 from app.modules.auth.schemas import (
     LoginRequest,
     RefreshResponse,
@@ -119,6 +120,18 @@ async def login(
     _set_auth_cookies(response, result["access_token"], result["refresh_token"])
 
     user_obj = result["user"]
+
+    await log_activity(
+        db=db,
+        shop_id=user_obj.shop_id,
+        user_id=user_obj.id,
+        action="USER_LOGIN",
+        entity_type="user",
+        entity_id=user_obj.id,
+        ip_address=request.client.host if request.client else None
+    )
+    await db.commit()
+
     return {
         "user": AuthUserPayload(
             id=user_obj.id,
@@ -216,6 +229,18 @@ async def force_logout_login(
     _set_auth_cookies(response, result["access_token"], result["refresh_token"])
 
     user_obj = result["user"]
+
+    await log_activity(
+        db=db,
+        shop_id=user_obj.shop_id,
+        user_id=user_obj.id,
+        action="USER_LOGIN_FORCE_LOGOUT",
+        entity_type="user",
+        entity_id=user_obj.id,
+        ip_address=request.client.host if request.client else None
+    )
+    await db.commit()
+
     return {
         "user": AuthUserPayload(
             id=user_obj.id,

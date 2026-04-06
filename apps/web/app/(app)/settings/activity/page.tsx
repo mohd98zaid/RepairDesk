@@ -47,45 +47,23 @@ export default function ActivityLogPage() {
     async function load() {
         setLoading(true);
         try {
-            // Use ticket status logs + other structured activity as proxy
-            const [ticketRes] = await Promise.all([
-                api.get("/tickets?per_page=50"),
-            ]);
-            // Build activity entries from ticket data
-            const entries: LogEntry[] = [];
-            for (const t of (ticketRes.data?.items || [])) {
-                // created_by_name is now populated by the backend with the real user name
-                const creatorName = t.created_by_name || t.created_by || "Unknown";
-                entries.push({
-                    id: t.id + "_create",
-                    action: "CREATE",
-                    entity: "ticket",
-                    entity_id: t.id,
-                    changed_by: creatorName,
-                    changed_at: t.created_at,
-                    notes: `Ticket RD-${String(t.ticket_number).padStart(5, "0")} created for ${t.device_type}`,
-                });
-                for (const log of (t.status_logs || [])) {
-                    entries.push({
-                        id: t.id + "_" + log.changed_at,
-                        action: "STATUS_CHANGE",
-                        entity: "ticket",
-                        entity_id: t.id,
-                        // changed_by from status_logs is already a full_name (resolved by backend)
-                        changed_by: log.changed_by || "Unknown",
-                        changed_at: log.changed_at,
-                        notes: `RD-${String(t.ticket_number).padStart(5, "0")}: ${(log.from_status || "NEW").replace(/_/g, " ")} → ${log.to_status.replace(/_/g, " ")}${log.notes ? ` — "${log.notes}"` : ""}`,
-                    });
-                }
-            }
-            entries.sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime());
-            setLogs(entries.slice(0, 100));
+            const res = await api.get("/activity?per_page=100");
+            const entries: LogEntry[] = (res.data?.items || []).map((t: any) => ({
+                id: t.id,
+                action: t.action,
+                entity: t.entity_type,
+                entity_id: t.entity_id,
+                changed_by: t.user_name || "Unknown",
+                changed_at: t.created_at,
+                notes: t.details?.old_status ? `${t.details.old_status} → ${t.details.new_status}` : t.details?.notes || `${t.action.replace(/_/g, " ")} on ${t.entity_type}`,
+            }));
+            setLogs(entries);
         } catch { /* silent */ }
         finally { setLoading(false); }
     }
 
     const filtered = filter === "ALL" ? logs : logs.filter(l => l.action === filter);
-    const filters = ["ALL", "CREATE", "STATUS_CHANGE", "UPDATE", "DELETE"];
+    const filters = ["ALL", ...Array.from(new Set(logs.map(l => l.action)))].slice(0, 8);
 
     return (
         <div className="p-6 max-w-3xl mx-auto">
@@ -94,7 +72,7 @@ export default function ActivityLogPage() {
                     <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
                         <Activity className="w-6 h-6 text-primary" /> Activity Log
                     </h1>
-                    <p className="text-muted-foreground text-sm mt-1">Recent actions in your repair shop</p>
+                    <p className="text-muted-foreground text-sm mt-1">Recent actions and authentications in your repair shop</p>
                 </div>
                 <button onClick={load} disabled={loading}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card border border-border shadow-sm hover:bg-muted text-foreground text-sm transition disabled:opacity-50">
@@ -110,7 +88,7 @@ export default function ActivityLogPage() {
                             ? "bg-primary/10 text-primary border-primary/20"
                             : "bg-card text-muted-foreground border-border hover:bg-muted"
                             }`}>
-                        {f.replace("_", " ")}
+                        {f.replace(/_/g, " ")}
                         {f !== "ALL" && (
                             <span className="ml-1.5 text-muted-foreground opacity-70">
                                 {logs.filter(l => l.action === f).length}
@@ -135,7 +113,14 @@ export default function ActivityLogPage() {
                 <div className="space-y-2">
                     {filtered.map(log => {
                         const Icon = ENTITY_ICONS[log.entity] ?? Activity;
-                        const color = ACTION_COLORS[log.action] ?? "text-muted-foreground bg-muted border-border";
+                        let color = "text-muted-foreground bg-muted border-border";
+                        if (log.action.includes("CREATE")) color = "text-success bg-success/10 border-success/20";
+                        else if (log.action.includes("UPDATE")) color = "text-primary bg-primary/10 border-primary/20";
+                        else if (log.action.includes("DELETE")) color = "text-danger bg-danger/10 border-danger/20";
+                        else if (log.action.includes("ASSIGN")) color = "text-indigo-500 bg-indigo-500/10 border-indigo-500/20";
+                        else if (log.action.includes("LOGIN")) color = "text-emerald-500 bg-emerald-500/10 border-emerald-500/20";
+                        else if (log.action.includes("STATUS")) color = "text-warning bg-warning/10 border-warning/20";
+                        
                         return (
                             <div key={log.id} className="bg-card border border-border shadow-sm rounded-xl p-4 flex items-start gap-4 hover:shadow-md transition">
                                 <div className={`w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0 ${color}`}>
@@ -145,11 +130,11 @@ export default function ActivityLogPage() {
                                     <p className="text-sm text-foreground font-medium">{log.notes || `${log.action} on ${log.entity}`}</p>
                                     <p className="text-xs text-muted-foreground mt-0.5">
                                         <span className="font-medium text-foreground opacity-80">{log.changed_by}</span>
-                                        {" · "}{timeAgo(log.changed_at)}
+                                        {" · "}{new Date(log.changed_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'medium' })} ({timeAgo(log.changed_at)})
                                     </p>
                                 </div>
                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${color}`}>
-                                    {log.action.replace("_", " ")}
+                                    {log.action.replace(/_/g, " ")}
                                 </span>
                             </div>
                         );

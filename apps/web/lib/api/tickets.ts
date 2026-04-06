@@ -26,6 +26,7 @@ export interface CreateTicketPayload {
   pre_repair_checklist?: object | null;
   customer_signature?: string | null;
   warranty_days?: number;
+  sla_deadline?: string;
 }
 
 export const ticketsApi = {
@@ -46,6 +47,11 @@ export const ticketsApi = {
 
   update: async (id: string, payload: Partial<CreateTicketPayload>) => {
     const { data } = await api.patch(`/tickets/${id}`, payload);
+    return data;
+  },
+
+  assign: async (id: string, assigned_to: string | null) => {
+    const { data } = await api.patch(`/tickets/${id}/assign`, { assigned_to });
     return data;
   },
 

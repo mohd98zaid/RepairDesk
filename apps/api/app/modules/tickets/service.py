@@ -104,6 +104,7 @@ async def create_ticket(
         pre_repair_checklist=data.pre_repair_checklist,
         customer_signature=data.customer_signature,
         warranty_days=data.warranty_days,
+        sla_deadline=data.sla_deadline,
         status="RECEIVED",
     )
     db.add(ticket)
@@ -201,7 +202,7 @@ async def update_ticket(
     db: AsyncSession,
 ) -> Ticket:
     ticket = await get_ticket(shop_id, ticket_id, db)
-    ALLOWED_FIELDS = {"device_model", "technician_notes", "estimated_cost", "final_cost", "assigned_to", "pre_repair_checklist", "customer_signature", "warranty_days"}
+    ALLOWED_FIELDS = {"device_model", "technician_notes", "estimated_cost", "final_cost", "assigned_to", "pre_repair_checklist", "customer_signature", "warranty_days", "sla_deadline"}
     for field, value in data.model_dump(exclude_none=True).items():
         if field not in ALLOWED_FIELDS:
             continue

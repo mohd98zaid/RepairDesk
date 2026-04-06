@@ -57,6 +57,7 @@ export interface TicketSummary {
   assigned_to: { id: string; full_name: string } | null;
   created_at: string;
   updated_at?: string;
+  sla_deadline?: string | null;
   pre_repair_checklist?: Record<string, any> | null;
   customer_signature?: string | null;
   warranty_days?: number | null;

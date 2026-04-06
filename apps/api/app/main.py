@@ -29,6 +29,7 @@ from app.modules.search.router import router as search_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.payments.router import router as payments_router
 from app.modules.billing.router import router as billing_router
+from app.modules.activity.router import router as activity_router
 from app.core.exceptions import RepairDeskException
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -193,6 +194,7 @@ def create_app() -> FastAPI:
     app.include_router(notifications_router, prefix=prefix)
     app.include_router(payments_router, prefix=prefix)
     app.include_router(billing_router, prefix=prefix)
+    app.include_router(activity_router, prefix=prefix)
 
     # Attach sqladmin with authentication
     from app.core.db import engine

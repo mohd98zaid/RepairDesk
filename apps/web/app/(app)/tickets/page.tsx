@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Plus, Search, SlidersHorizontal, RefreshCw } from "lucide-react";
+import { Plus, Search, SlidersHorizontal, RefreshCw, User } from "lucide-react";
 import { ticketsApi } from "@/lib/api/tickets";
 import { StatusBadge } from "@/components/tickets/StatusBadge";
 import { fmtTicketId } from "@/lib/utils/ticketId";
@@ -29,6 +29,8 @@ interface TicketRow {
     estimated_cost: string | null;
     final_cost: string | null;
     created_at: string;
+    sla_deadline?: string | null;
+    assigned_to_name?: string | null;
 }
 
 function TicketSkeleton() {
@@ -143,11 +145,11 @@ export default function TicketsPage() {
             </div>
 
             {/* Ticket list */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {loading ? (
                     Array.from({ length: 5 }).map((_, i) => <TicketSkeleton key={i} />)
                 ) : tickets.length === 0 ? (
-                    <div className="md:col-span-2 lg:col-span-1 bg-card border border-border shadow-sm rounded-xl py-16 flex flex-col items-center justify-center text-center text-muted-foreground w-full">
+                    <div className="col-span-1 sm:col-span-2 lg:col-span-3 bg-card border border-border shadow-sm rounded-xl py-16 flex flex-col items-center justify-center text-center text-muted-foreground w-full">
                         <SlidersHorizontal className="w-10 h-10 mb-3 opacity-30 mx-auto" />
                         <p className="text-sm">No tickets found</p>
                         <Link
@@ -162,46 +164,43 @@ export default function TicketsPage() {
                         <Link
                             key={ticket.id}
                             href={`/tickets/${ticket.id}`}
-                            className="bg-card border border-border shadow-sm rounded-xl p-3 sm:p-4 flex flex-col hover:border-primary/40 hover:shadow-md transition relative group"
+                            className="bg-card border border-border/80 shadow-[0_1px_2px_rgba(0,0,0,0.05)] rounded-lg p-2.5 flex flex-col hover:border-primary/40 hover:bg-muted/10 transition-colors group gap-1.5"
                         >
-                            <div className="flex flex-col xl:flex-row xl:justify-between items-start gap-1.5 w-full">
-                                {/* Ticket # */}
-                                <span className="text-primary text-xs sm:text-sm font-bold font-mono px-1.5 py-0.5 sm:px-2 sm:py-1 bg-primary/10 rounded-md shrink-0">
-                                    {fmtTicketId(ticket.ticket_number)}
-                                </span>
-                                {/* Mobile Status Badge (now shows inline in the grid) */}
-                                <div className="transform scale-90 origin-left xl:origin-right shrink-0">
+                            <div className="flex items-center justify-between w-full">
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-primary text-[10px] font-bold font-mono px-1.5 py-0.5 bg-primary/10 rounded shrink-0 leading-none">
+                                        {fmtTicketId(ticket.ticket_number)}
+                                    </span>
+                                    <span className="text-foreground font-semibold text-[11px] sm:text-xs truncate">
+                                        {ticket.device_type} {ticket.device_model && <span className="font-normal text-muted-foreground opacity-80">· {ticket.device_model}</span>}
+                                    </span>
+                                </div>
+                                <div className="shrink-0 transform scale-[0.75] origin-right ml-2 -my-2 flex items-center">
                                     <StatusBadge status={ticket.status} />
                                 </div>
                             </div>
-
-                            {/* Info */}
-                            <div className="flex-1 min-w-0 mt-2">
-                                <p className="text-foreground font-semibold text-xs sm:text-sm truncate">
-                                    {ticket.device_type}
-                                    {ticket.device_model && (
-                                        <span className="text-muted-foreground font-normal"> · {ticket.device_model}</span>
+                            
+                            <div className="flex flex-wrap items-center justify-between gap-x-2 w-full mt-0.5">
+                                <div className="text-muted-foreground opacity-90 text-[10px] truncate max-w-[50%] xs:max-w-[65%] leading-tight pr-2 border-r border-border/40">
+                                    {ticket.reported_issue || "No details"}
+                                </div>
+                                
+                                <div className="flex items-center gap-1.5 ml-auto shrink-0">
+                                    {ticket.assigned_to_name && (
+                                        <div className="flex items-center gap-1 text-muted-foreground bg-muted/60 px-1 py-0.5 rounded border border-border/50 text-[9px] font-medium max-w-[65px] truncate">
+                                            <User className="w-2.5 h-2.5 opacity-70 flex-shrink-0" />
+                                            <span className="truncate leading-none">{ticket.assigned_to_name}</span>
+                                        </div>
                                     )}
-                                </p>
-                                <p className="text-muted-foreground opacity-80 text-[10px] sm:text-xs truncate mt-0.5 w-full">{ticket.reported_issue}</p>
-                            </div>
-
-                            {/* Bottom Container */}
-                            <div className="flex items-end justify-between w-full mt-3 pt-2 border-t border-border">
-                                {/* Cost */}
-                                <div className="text-left flex-shrink-0">
-                                    {ticket.final_cost ? (
-                                        <div>
-                                            <p className="text-success font-bold text-xs sm:text-sm">₹{ticket.final_cost}</p>
-                                            <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Final</p>
-                                        </div>
-                                    ) : ticket.estimated_cost ? (
-                                        <div>
-                                            <p className="text-foreground font-medium text-xs sm:text-sm">~₹{ticket.estimated_cost}</p>
-                                            <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Est.</p>
-                                        </div>
-                                    ) : (
-                                        <p className="text-muted-foreground opacity-50 text-xs sm:text-sm">—</p>
+                                    {(ticket.final_cost || ticket.estimated_cost) && (
+                                        <span className={`text-[10px] font-bold tracking-tight px-1 ${ticket.final_cost ? "text-success" : "text-foreground"}`}>
+                                            {ticket.final_cost ? `₹${ticket.final_cost}` : `~₹${ticket.estimated_cost}`}
+                                        </span>
+                                    )}
+                                    {ticket.sla_deadline && (
+                                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded leading-none ${new Date(ticket.sla_deadline) < new Date() ? "text-danger bg-danger/10" : ticket.status === 'DELIVERED' ? "text-success bg-success/10" : "text-warning bg-warning/10"}`}>
+                                           {new Date(ticket.sla_deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric'})}
+                                        </span>
                                     )}
                                 </div>
                             </div>

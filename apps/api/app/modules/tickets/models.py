@@ -51,6 +51,7 @@ class Ticket(Base):
     customer_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
     customer_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     customer_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sla_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False

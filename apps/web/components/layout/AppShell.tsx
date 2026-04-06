@@ -450,19 +450,19 @@ function ShopStatusBanner({ status }: { status: string }) {
 
 function BlockedScreen() {
     return (
-        <div style={{ position: 'fixed', inset: 0, background: '#09090b', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--background)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
             <div style={{ maxWidth: 400, textAlign: 'center' }}>
-                <div style={{ width: 64, height: 64, borderRadius: 20, background: 'rgba(239,68,68,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', color: '#ef4444' }}>
+                <div style={{ width: 64, height: 64, borderRadius: 20, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', color: '#ef4444' }}>
                     <AlertTriangle size={32} />
                 </div>
-                <h1 style={{ color: '#fff', fontSize: 24, fontWeight: 700, marginBottom: 12 }}>Access Denied</h1>
-                <p style={{ color: '#94a3b8', lineHeight: 1.6, marginBottom: 32 }}>
+                <h1 style={{ color: 'var(--foreground)', fontSize: 24, fontWeight: 700, marginBottom: 12 }}>Access Denied</h1>
+                <p style={{ color: 'var(--muted-foreground)', lineHeight: 1.6, marginBottom: 32 }}>
                     Your repair shop account has been blocked by administrators.
                     You can no longer access the platform or perform any operations.
                 </p>
                 <button
                     onClick={() => { localStorage.removeItem('repairdesk-auth'); window.location.href = '/login'; }}
-                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '10px 24px', borderRadius: 10, cursor: 'pointer', fontWeight: 600 }}>
+                    style={{ background: 'var(--glass-bg)', backdropFilter: 'blur(12px)', border: '1px solid var(--glass-border)', color: 'var(--foreground)', padding: '10px 24px', borderRadius: 10, cursor: 'pointer', fontWeight: 600 }}>
                     Sign Out
                 </button>
             </div>
@@ -582,7 +582,6 @@ function useSessionHeartbeat(onEvicted: () => void) {
         return () => {
             destroyed = true;
             clearInterval(interval);
-            clearTimeout(warmup);
             bc?.close();
         };
     }, []);
@@ -662,46 +661,49 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const settingsItems = user?.role === "OWNER" ? settingsItemsOwner : settingsItemsTechnician;
 
     const SidebarContent = ({ onNavClick }: { onNavClick?: () => void }) => (
-        <>
-            <div className="mb-4">
-                <GlobalSearch onSearch={onNavClick} />
-            </div>
-            {/* Main nav */}
-            <nav className="flex flex-col gap-1 flex-1">
-                {navItems.map((item) => (
-                    <NavLink key={item.href} {...item} onClick={onNavClick} />
-                ))}
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            {/* Scrollable nav area */}
+            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 4, paddingBottom: 8, scrollbarWidth: 'none' }}>
+                <div className="mb-3">
+                    <GlobalSearch onSearch={onNavClick} />
+                </div>
+                {/* Main nav */}
+                <nav className="flex flex-col gap-0.5">
+                    {navItems.map((item) => (
+                        <NavLink key={item.href} {...item} onClick={onNavClick} />
+                    ))}
 
-                {/* Settings group */}
-                <button
-                    onClick={() => setSettingsOpen((v) => !v)}
-                    className={clsx(
-                        "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all w-full",
-                        isSettingsActive
-                            ? "bg-primary/10 text-primary border border-primary/20"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    {/* Settings group */}
+                    <button
+                        onClick={() => setSettingsOpen((v) => !v)}
+                        className={clsx(
+                            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all w-full",
+                            isSettingsActive
+                                ? "bg-primary/10 text-primary border border-primary/20"
+                                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                        )}
+                    >
+                        <Settings className="w-5 h-5 flex-shrink-0" />
+                        <span className="flex-1 text-left">Settings</span>
+                        <ChevronRight className={clsx("w-4 h-4 transition-transform", settingsOpen && "rotate-90")} />
+                    </button>
+
+                    {settingsOpen && (
+                        <div className="ml-7 flex flex-col gap-0.5 border-l border-border pl-3">
+                            {settingsItems.map((item) => (
+                                <NavLink key={item.href} {...item} exact onClick={onNavClick} />
+                            ))}
+                        </div>
                     )}
-                >
-                    <Settings className="w-5 h-5 flex-shrink-0" />
-                    <span className="flex-1 text-left">Settings</span>
-                    <ChevronRight className={clsx("w-4 h-4 transition-transform", settingsOpen && "rotate-90")} />
-                </button>
+                </nav>
 
-                {settingsOpen && (
-                    <div className="ml-7 flex flex-col gap-0.5 border-l border-border pl-3">
-                        {settingsItems.map((item) => (
-                            <NavLink key={item.href} {...item} exact onClick={onNavClick} />
-                        ))}
-                    </div>
-                )}
-            </nav>
+                {/* PWA install prompt */}
+                <PWAInstallPrompt />
+            </div>
 
-            {/* PWA install prompt */}
-            <PWAInstallPrompt />
-
-            {/* User section */}
-            <div className="border-t border-border pt-4 mt-2">
-                <div className="px-3 mb-3">
+            {/* User section — always visible at bottom */}
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, flexShrink: 0 }}>
+                <div className="px-3 mb-2">
                     <p className="text-sm font-medium text-foreground truncate">{user?.full_name}</p>
                     <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
                     <span className={clsx(
@@ -726,26 +728,36 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     <LogOut className="w-4 h-4" /> Sign Out
                 </button>
             </div>
-        </>
+        </div>
     );
 
     if (!mounted) {
         return (
-            <div className="min-h-[100dvh] flex bg-background">
+            <div className="min-h-[100dvh] flex w-full max-w-[100vw] overflow-x-hidden relative bg-background md:pl-64">
                 {/* Skeleton placeholder while client hydrates */}
-                <aside className="hidden md:flex flex-col w-64 border-r border-border p-4 gap-2 h-screen" />
-                <main className="flex-1 flex flex-col min-w-0" />
+                <aside className="glass-sidebar hidden md:flex md:flex-col md:w-64 border-r border-border p-4 gap-2 h-screen overflow-hidden fixed top-0 left-0 z-50" />
+                <main className="flex-1 flex flex-col min-w-0 w-full max-w-[100vw] overflow-x-hidden" />
             </div>
         );
     }
 
     return (
-        <div className="min-h-[100dvh] flex bg-background">
-            {/* Desktop Sidebar */}
-            <aside className="hidden md:flex flex-col w-64 border-r border-border bg-card p-4 gap-2 h-screen overflow-y-auto sticky top-0 z-50">
-                {/* Logo + Bell */}
-                <div className="flex items-center gap-2.5 mb-4 px-1">
-                    <div className="bg-white rounded-lg w-[140px] xl:w-[160px] h-10 xl:h-12 flex items-center justify-center overflow-hidden flex-shrink-0 px-2 py-1">
+        <div className="min-h-[100dvh] w-full max-w-[100vw] overflow-x-hidden flex bg-background md:pl-64" style={{ background: 'var(--background)' }}>
+            {/* Desktop Sidebar — iOS 26 glass */}
+            <aside
+                className="glass-sidebar hidden md:flex md:flex-col md:w-64 p-4 h-screen fixed top-0 left-0 z-50 shrink-0"
+                style={{
+                    background: 'var(--glass-bg)',
+                    backdropFilter: 'blur(28px) saturate(200%)',
+                    WebkitBackdropFilter: 'blur(28px) saturate(200%)',
+                    borderRight: '1px solid var(--glass-border)',
+                    boxShadow: 'var(--glass-shadow)',
+                    overflow: 'hidden',
+                }}
+            >
+                {/* Logo + Bell — fixed header inside sidebar */}
+                <div className="flex items-center gap-2.5 mb-3 px-1 flex-shrink-0">
+                    <div className="rounded-lg w-[140px] xl:w-[160px] h-10 xl:h-12 flex items-center justify-center overflow-hidden flex-shrink-0 px-2 py-1" style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(8px)' }}>
                         <img src="/logo.png" alt="RepairDeskz" className="w-full h-auto object-contain scale-[1.15]" />
                     </div>
                     <span className="flex-1"></span>
@@ -755,8 +767,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <SidebarContent />
             </aside>
 
-            {/* Mobile top bar */}
-            <div className="md:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-2 bg-card/90 backdrop-blur-md border-b border-border">
+            {/* Mobile top bar — iOS 26 glass */}
+            <div className="glass-top-bar md:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid var(--glass-border)', boxShadow: 'var(--glass-shadow)' }}>
                 <div className="flex items-center gap-2">
                     <div className="bg-white rounded w-[110px] h-7 flex items-center justify-center overflow-hidden shadow-sm p-1">
                         <img src="/logo.png" alt="RepairDeskz" className="w-full h-auto object-contain scale-[1.35]" />
@@ -767,7 +779,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     <button onClick={() => setQrOpen(true)} className="w-11 h-11 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted transition" title="Scan QR Code" aria-label="Scan QR Code">
                         <QrCode className="w-5 h-5" />
                     </button>
-                    <NotificationsBell dropdownClassName="absolute right-0 top-12 w-72 sm:w-80 max-h-[70vh] shadow-2xl" />
+                    <NotificationsBell dropdownClassName="fixed top-[60px] left-4 right-4 sm:absolute sm:top-12 sm:left-auto sm:-right-4 sm:w-80 max-h-[70vh] shadow-2xl" />
                     <Link
                         href="/tickets/new"
                         className="flex items-center gap-1 px-3 py-2 rounded-lg gradient-primary text-white text-xs font-medium min-h-[44px]"
@@ -782,30 +794,46 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
             </div>
 
-            {/* Mobile drawer */}
+            {/* Mobile drawer — slides in from right when hamburger tapped */}
             {mobileMenuOpen && (
-                <div className="md:hidden fixed inset-0 z-40 pt-14">
-                    <div className="absolute inset-0 bg-black/60" onClick={() => setMobileMenuOpen(false)} />
-                    <div className="absolute top-14 right-0 bottom-0 w-72 bg-card border-l border-border p-4 flex flex-col gap-1 overflow-y-auto shadow-2xl">
+                <div className="md:hidden fixed inset-0 z-40" style={{ top: '56px' }}>
+                    {/* Backdrop — tap to close */}
+                    <div
+                        className="absolute inset-0"
+                        style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+                        onClick={() => setMobileMenuOpen(false)}
+                    />
+                    {/* Drawer panel */}
+                    <div
+                        className="absolute top-0 right-0 bottom-0 w-72 flex flex-col p-4"
+                        style={{
+                            background: 'var(--glass-bg)',
+                            backdropFilter: 'blur(28px) saturate(200%)',
+                            WebkitBackdropFilter: 'blur(28px) saturate(200%)',
+                            borderLeft: '1px solid var(--glass-border)',
+                            boxShadow: 'var(--glass-shadow)',
+                            overflow: 'hidden',
+                        }}
+                    >
                         <SidebarContent onNavClick={() => setMobileMenuOpen(false)} />
                     </div>
                 </div>
             )}
 
-            {/* Bottom nav (mobile) — 5 most important pages */}
-            <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-card/90 backdrop-blur-md border-t border-border flex items-center justify-around px-2 py-2">
+            {/* Bottom nav (mobile) — iOS 26 glass */}
+            <nav className="glass-bottom-nav md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around px-2 py-2" style={{ borderTop: '1px solid var(--glass-border)', boxShadow: '0 -4px 24px rgba(0,0,0,0.08)', position: 'fixed' }}>
                 {[...navItems.slice(0, 4), { href: "/settings/shop", label: "Settings", icon: Settings }].map((item) => (
                     <BottomNavItem key={item.href} {...item} />
                 ))}
             </nav>
 
             {/* Main content */}
-            <main className="flex-1 flex flex-col min-w-0 md:ml-0 pt-14 md:pt-0 pb-16 md:pb-0" suppressHydrationWarning>
+            <main className="flex-1 flex flex-col min-w-0 m-0 p-0 md:m-0 md:p-0 pt-[56px] md:pt-0 pb-[64px] md:pb-0" style={{ position: 'relative', zIndex: 1 }} suppressHydrationWarning>
                 {shopStatus === 'BLOCKED' && <BlockedScreen />}
                 <ImpersonationBanner />
                 <BroadcastBanner />
                 <ShopStatusBanner status={shopStatus} />
-                <div className="flex-1 overflow-auto">{children}</div>
+                <div className="flex-1 overflow-x-hidden">{children}</div>
             </main>
 
             {qrOpen && <QRScannerModal onClose={() => setQrOpen(false)} />}
@@ -820,6 +848,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     }}
                 />
             )}
+
         </div>
     );
 }
