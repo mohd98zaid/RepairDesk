@@ -16,7 +16,7 @@ import {
     Download
 } from "lucide-react";
 import AdminNav from "@/components/admin/AdminNav";
-import { getShopTicket, getShopTicketInvoice } from "@/lib/admin-api";
+import { getShopTicket, getShopTicketInvoice, getShop } from "@/lib/admin-api";
 import { StatusBadge } from "@/components/tickets/StatusBadge";
 import { fmtTicketId } from "@/lib/utils/ticketId";
 import type { TicketDetail } from "@/types";
@@ -63,11 +63,20 @@ export default function AdminTicketDetailPage() {
     const { id: shopId, ticketId } = useParams<{ id: string; ticketId: string }>();
     const [ticket, setTicket] = useState<TicketDetail | null>(null);
     const [invoice, setInvoice] = useState<{ invoice_number: string; download_url: string } | null>(null);
+    const [shop, setShop] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
+    const currency = shop?.currency_symbol || "₹";
+
     useEffect(() => {
-        getShopTicket(shopId, ticketId)
-            .then(setTicket)
+        Promise.all([
+            getShopTicket(shopId, ticketId),
+            getShop(shopId)
+        ])
+            .then(([tRes, sRes]) => {
+                setTicket(tRes);
+                setShop(sRes);
+            })
             .catch(() => { /* handled in ui */ })
             .finally(() => setLoading(false));
 
@@ -152,14 +161,14 @@ export default function AdminTicketDetailPage() {
                             <h2 className="text-sm font-semibold text-foreground/90 mb-3 flex items-center gap-2">
                                 <IndianRupee className="w-4 h-4" /> Financials
                             </h2>
-                            <InfoRow label="Estimated Cost" value={ticket.estimated_cost ? `₹${ticket.estimated_cost}` : "—"} />
-                            <InfoRow label="Parts Cost" value={ticket.parts_cost ? `₹${ticket.parts_cost}` : "—"} />
-                            <InfoRow label="Final Cost" value={ticket.final_cost ? `₹${ticket.final_cost}` : "—"} />
+                            <InfoRow label="Estimated Cost" value={ticket.estimated_cost ? `${currency}${ticket.estimated_cost}` : "—"} />
+                            <InfoRow label="Parts Cost" value={ticket.parts_cost ? `${currency}${ticket.parts_cost}` : "—"} />
+                            <InfoRow label="Final Cost" value={ticket.final_cost ? `${currency}${ticket.final_cost}` : "—"} />
                             <InfoRow
                                 label="Profit"
                                 value={ticket.profit ? (
                                     <span className={parseFloat(ticket.profit) >= 0 ? "text-emerald-400" : "text-red-400"}>
-                                        ₹{ticket.profit}
+                                        {currency}{ticket.profit}
                                     </span>
                                 ) : "—"}
                             />
@@ -196,7 +205,7 @@ export default function AdminTicketDetailPage() {
                                                 <p className="text-foreground">{part.name}</p>
                                                 <p className="text-xs text-muted-foreground">Qty: {part.quantity}</p>
                                             </div>
-                                            <p className="text-foreground/90">₹{parseFloat(part.cost || "0") * part.quantity}</p>
+                                            <p className="text-foreground/90">{currency}{parseFloat(part.cost || "0") * part.quantity}</p>
                                         </div>
                                     ))}
                                 </div>

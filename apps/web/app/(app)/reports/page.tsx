@@ -8,11 +8,12 @@ import {
 } from "lucide-react";
 import { reportsApi, DailyReportData, RangeReportData } from "@/lib/api/reports";
 import clsx from "clsx";
+import { useCurrency } from "@/store/shopStore";
 
 type Mode = "daily" | "range";
 
-function fmt(v: string | number) {
-    return `₹${parseFloat(String(v)).toLocaleString("en-IN", {
+function fmt(v: string | number, currency: string) {
+    return `${currency}${parseFloat(String(v)).toLocaleString("en-IN", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     })}`;
@@ -47,7 +48,7 @@ function StatCard({
     );
 }
 
-function MiniBarChart({ days }: { days: DailyReportData[] }) {
+function MiniBarChart({ days, currency }: { days: DailyReportData[], currency: string }) {
     const max = Math.max(...days.map((d) => parseFloat(d.total_revenue)), 1);
     return (
         <div className="glass rounded-xl p-5">
@@ -60,7 +61,7 @@ function MiniBarChart({ days }: { days: DailyReportData[] }) {
                             {/* Tooltip */}
                             <div className="absolute bottom-full mb-1 hidden group-hover:block bg-card border border-border rounded-lg p-2 text-xs text-foreground whitespace-nowrap z-10 pointer-events-none">
                                 <p>{new Date(day.date).toLocaleDateString()}</p>
-                                <p className="text-emerald-400 font-medium">{fmt(day.total_revenue)}</p>
+                                <p className="text-emerald-400 font-medium">{fmt(day.total_revenue, currency)}</p>
                                 <p className="text-muted-foreground">{day.tickets_completed} completed</p>
                             </div>
                             <div
@@ -85,6 +86,7 @@ function MiniBarChart({ days }: { days: DailyReportData[] }) {
 
 export default function ReportsPage() {
     const [mode, setMode] = useState<Mode>("daily");
+    const currency = useCurrency();
 
     // Daily state
     const [dailyDate, setDailyDate] = useState(() => new Date().toISOString().split("T")[0]);
@@ -193,10 +195,10 @@ export default function ReportsPage() {
                     ) : daily ? (
                         <>
                             <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
-                                <StatCard icon={IndianRupee} label="Revenue" value={fmt(daily.total_revenue)} sub="From delivered tickets" colorClass="bg-emerald-600" />
-                                <StatCard icon={TrendingUp} label="Net Profit" value={fmt(daily.net_profit)} sub={`Parts: ${fmt(daily.total_parts_cost)}`} colorClass="bg-violet-600" />
+                                <StatCard icon={IndianRupee} label="Revenue" value={fmt(daily.total_revenue, currency)} sub="From delivered tickets" colorClass="bg-emerald-600" />
+                                <StatCard icon={TrendingUp} label="Net Profit" value={fmt(daily.net_profit, currency)} sub={`Parts: ${fmt(daily.total_parts_cost, currency)}`} colorClass="bg-violet-600" />
                                 <StatCard icon={Ticket} label="Created" value={String(daily.tickets_created)} sub="New tickets" colorClass="bg-indigo-600" />
-                                <StatCard icon={Package} label="Completed" value={String(daily.tickets_completed)} sub={`Avg: ${fmt(daily.avg_ticket_value)}`} colorClass="bg-amber-600" />
+                                <StatCard icon={Package} label="Completed" value={String(daily.tickets_completed)} sub={`Avg: ${fmt(daily.avg_ticket_value, currency)}`} colorClass="bg-amber-600" />
                             </div>
 
                             {/* Status breakdown */}
@@ -263,14 +265,14 @@ export default function ReportsPage() {
                         <>
                             {/* Totals */}
                             <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
-                                <StatCard icon={IndianRupee} label="Total Revenue" value={fmt(range.totals.total_revenue)} colorClass="bg-emerald-600" />
-                                <StatCard icon={TrendingUp} label="Net Profit" value={fmt(range.totals.net_profit)} sub={`Parts: ${fmt(range.totals.total_parts_cost)}`} colorClass="bg-violet-600" />
+                                <StatCard icon={IndianRupee} label="Total Revenue" value={fmt(range.totals.total_revenue, currency)} colorClass="bg-emerald-600" />
+                                <StatCard icon={TrendingUp} label="Net Profit" value={fmt(range.totals.net_profit, currency)} sub={`Parts: ${fmt(range.totals.total_parts_cost, currency)}`} colorClass="bg-violet-600" />
                                 <StatCard icon={Ticket} label="Created" value={String(range.totals.tickets_created)} colorClass="bg-indigo-600" />
                                 <StatCard icon={Package} label="Completed" value={String(range.totals.tickets_completed)} colorClass="bg-amber-600" />
                             </div>
 
                             {/* Bar chart */}
-                            {range.days.length > 1 && <MiniBarChart days={range.days} />}
+                            {range.days.length > 1 && <MiniBarChart days={range.days} currency={currency} />}
 
                             {/* Day breakdown table */}
                             <div className="glass rounded-xl overflow-hidden mt-4">
@@ -295,13 +297,13 @@ export default function ReportsPage() {
                                                         </td>
                                                         <td className="px-4 py-3 text-foreground/90">{day.tickets_created}</td>
                                                         <td className="px-4 py-3 text-foreground/90">{day.tickets_completed}</td>
-                                                        <td className="px-4 py-3 text-emerald-400 font-medium">{fmt(day.total_revenue)}</td>
-                                                        <td className="px-4 py-3 text-muted-foreground">{fmt(day.total_parts_cost)}</td>
+                                                        <td className="px-4 py-3 text-emerald-400 font-medium">{fmt(day.total_revenue, currency)}</td>
+                                                        <td className="px-4 py-3 text-muted-foreground">{fmt(day.total_parts_cost, currency)}</td>
                                                         <td className={clsx(
                                                             "px-4 py-3 font-medium",
                                                             parseFloat(day.net_profit) >= 0 ? "text-emerald-400" : "text-red-400"
                                                         )}>
-                                                            {fmt(day.net_profit)}
+                                                            {fmt(day.net_profit, currency)}
                                                         </td>
                                                     </tr>
                                                 ))}

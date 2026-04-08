@@ -189,6 +189,7 @@ export default function AnalyticsPage() {
     const [data, setData] = useState<AnalyticsData | null>(null);
     const [loading, setLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         load();
@@ -196,8 +197,12 @@ export default function AnalyticsPage() {
 
     async function load() {
         setLoading(true);
+        setError(null);
         try { const d = await getAnalytics(); setData(d); setLastUpdated(new Date()); }
-        catch { router.push('/admin/login'); }
+        catch (e: any) {
+            if (e?.response?.status === 401) { router.push('/admin/login'); return; }
+            setError(e?.response?.data?.detail || e?.message || 'Failed to load analytics');
+        }
         finally { setLoading(false); }
     }
 
@@ -219,7 +224,13 @@ export default function AnalyticsPage() {
                     </button>
                 </header>
 
-                {loading && !data ? (
+                {error && !data ? (
+                    <div style={{ textAlign: 'center', padding: 80 }}>
+                        <p style={{ color: '#f87171', fontSize: 16, fontWeight: 600, marginBottom: 8 }}>⚠ Failed to load analytics</p>
+                        <p style={{ color: '#64748b', fontSize: 13, marginBottom: 16 }}>{error}</p>
+                        <button onClick={load} style={{ background: 'rgba(124,58,237,0.3)', border: '1px solid rgba(124,58,237,0.4)', color: '#c4b5fd', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontSize: 13 }}>Retry</button>
+                    </div>
+                ) : loading && !data ? (
                     <div style={{ textAlign: 'center', padding: 80, color: '#475569' }}>Loading analytics…</div>
                 ) : data ? (
                     <>

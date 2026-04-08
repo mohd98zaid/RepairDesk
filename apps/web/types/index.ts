@@ -22,6 +22,8 @@ export interface Shop {
   logo_data: string | null;
   plan: Plan;
   is_active: boolean;
+  currency?: string;
+  currency_symbol?: string;
   created_at: string;
 }
 

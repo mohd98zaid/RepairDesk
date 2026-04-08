@@ -288,7 +288,17 @@ const billingAxios = axios.create({
   baseURL: `${API_BASE}/billing`,
   withCredentials: true, // CRITICAL: send httpOnly admin cookie
 });
-// No interceptor needed — admin token is in httpOnly cookie, sent automatically
+
+// Redirect to admin login on 401 (session expired)
+billingAxios.interceptors.response.use(
+  (res) => res,
+  (error) => {
+    if (error.response?.status === 401 && typeof window !== 'undefined') {
+      window.location.href = '/admin/login';
+    }
+    return Promise.reject(error);
+  }
+);
 
 export async function listPlans() {
   const res = await billingAxios.get('/admin/plans');

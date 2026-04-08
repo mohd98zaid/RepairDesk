@@ -27,6 +27,7 @@ export interface CreateTicketPayload {
   customer_signature?: string | null;
   warranty_days?: number;
   sla_deadline?: string;
+  sla_hours?: number;
 }
 
 export const ticketsApi = {

@@ -10,6 +10,7 @@ import { inventoryApi, CreateItemPayload } from "@/lib/api/inventory";
 import clsx from "clsx";
 import { InfiniteScrollObserver } from "@/components/InfiniteScrollObserver";
 import { api } from "@/lib/api/client";
+import { useCurrency } from "@/store/shopStore";
 
 interface ItemRow {
     id: string;
@@ -46,6 +47,7 @@ function ItemModal({
     const [deleting, setDeleting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const router = useRouter();
+    const currency = useCurrency();
 
     useEffect(() => {
         api.get("/shops/me").then(r => {
@@ -116,8 +118,8 @@ function ItemModal({
                     {[
                         { key: "name", label: "Name *", type: "text", placeholder: "e.g. iPhone 14 Screen" },
                         { key: "sku", label: "SKU", type: "text", placeholder: "e.g. IPH14-SCR" },
-                        { key: "purchase_price", label: "Purchase Price (₹) *", type: "number", placeholder: "0.00" },
-                        { key: "selling_price", label: "Selling Price (₹) *", type: "number", placeholder: "0.00" },
+                        { key: "purchase_price", label: `Purchase Price (${currency}) *`, type: "number", placeholder: "0.00" },
+                        { key: "selling_price", label: `Selling Price (${currency}) *`, type: "number", placeholder: "0.00" },
                         { key: "quantity", label: "Initial Quantity", type: "number", placeholder: "0" },
                         { key: "low_stock_threshold", label: "Low Stock Alert", type: "number", placeholder: "5" },
                     ].map(({ key, label, type, placeholder }) => (
@@ -299,6 +301,7 @@ export default function InventoryPage() {
     const [addModal, setAddModal] = useState(false);
     const [editItem, setEditItem] = useState<ItemRow | null>(null);
     const [stockItem, setStockItem] = useState<ItemRow | null>(null);
+    const currency = useCurrency();
 
     const load = useCallback(async () => {
         if (page === 1) setLoading(true);
@@ -446,8 +449,8 @@ export default function InventoryPage() {
                                         )}
                                     </td>
                                     <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{item.sku || "—"}</td>
-                                    <td className="px-4 py-3 text-muted-foreground">₹{item.purchase_price}</td>
-                                    <td className="px-4 py-3 text-foreground font-medium">₹{item.selling_price}</td>
+                                    <td className="px-4 py-3 text-muted-foreground">{currency}{item.purchase_price}</td>
+                                    <td className="px-4 py-3 text-foreground font-medium">{currency}{item.selling_price}</td>
                                     <td className="px-4 py-3">
                                         {margin(item) !== null && (
                                             <span className="flex items-center gap-1 text-success text-xs">
@@ -528,7 +531,7 @@ export default function InventoryPage() {
                                     <p className="text-muted-foreground font-mono text-xs">{item.sku || "No SKU"}</p>
                                 </div>
                                 <div className="flex flex-col items-end">
-                                    <span className="text-foreground font-bold text-sm">₹{item.selling_price}</span>
+                                    <span className="text-foreground font-bold text-sm">{currency}{item.selling_price}</span>
                                     {margin(item) !== null && (
                                         <span className="text-success text-[10px] font-medium flex items-center gap-0.5 uppercase tracking-wider">
                                             <TrendingUp className="w-3 h-3" /> {margin(item)}% MRG

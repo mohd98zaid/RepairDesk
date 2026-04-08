@@ -182,12 +182,22 @@ async def get_platform_analytics(
     total_tickets = (await db.execute(select(func.count()).select_from(select(Ticket).subquery()))).scalar_one()
     total_users = (await db.execute(select(func.count()).select_from(select(User).subquery()))).scalar_one()
 
-    # Total revenue (sum of final_cost across all tickets)
+    # Total revenue (sum of final_cost across all tickets, normalized to INR)
     from sqlalchemy import cast, Float
-    revenue_result = await db.execute(
-        select(func.coalesce(func.sum(cast(Ticket.final_cost, Float)), 0.0))
+    EXCHANGE_RATES = {
+        "INR": 1.0,
+        "USD": 83.0,
+        "AED": 22.6,
+        "EUR": 90.0,
+        "GBP": 105.0,
+    }
+
+    revenue_by_currency = await db.execute(
+        select(func.coalesce(Shop.currency, 'INR'), func.sum(cast(Ticket.final_cost, Float)))
+        .select_from(Ticket).join(Shop, Ticket.shop_id == Shop.id)
+        .group_by(Shop.currency)
     )
-    total_revenue = float(revenue_result.scalar_one() or 0)
+    total_revenue = sum(float(amt or 0) * EXCHANGE_RATES.get(curr, 1.0) for curr, amt in revenue_by_currency.fetchall())
 
     # Ticket status breakdown
     from sqlalchemy import case
@@ -221,11 +231,13 @@ async def get_platform_analytics(
             )
         )).scalar_one()
 
-        m_revenue = float((await db.execute(
-            select(func.coalesce(func.sum(cast(Ticket.final_cost, Float)), 0.0)).where(
-                Ticket.created_at >= month_start, Ticket.created_at < month_end
-            )
-        )).scalar_one() or 0)
+        m_rev_by_curr = await db.execute(
+            select(func.coalesce(Shop.currency, 'INR'), func.sum(cast(Ticket.final_cost, Float)))
+            .select_from(Ticket).join(Shop, Ticket.shop_id == Shop.id)
+            .where(Ticket.created_at >= month_start, Ticket.created_at < month_end)
+            .group_by(Shop.currency)
+        )
+        m_revenue = sum(float(amt or 0) * EXCHANGE_RATES.get(curr, 1.0) for curr, amt in m_rev_by_curr.fetchall())
 
         m_shops = (await db.execute(
             select(func.count()).where(
@@ -243,19 +255,26 @@ async def get_platform_analytics(
     # Top 5 shops by revenue
     top_revenue_rows = await db.execute(
         select(
-            Shop.id, Shop.name,
+            Shop.id, Shop.name, func.coalesce(Shop.currency, 'INR'),
             func.coalesce(func.sum(cast(Ticket.final_cost, Float)), 0.0).label("revenue"),
             func.count(Ticket.id).label("tickets"),
         )
         .outerjoin(Ticket, Ticket.shop_id == Shop.id)
-        .group_by(Shop.id, Shop.name)
-        .order_by(func.coalesce(func.sum(cast(Ticket.final_cost, Float)), 0.0).desc())
-        .limit(5)
+        .group_by(Shop.id, Shop.name, Shop.currency)
     )
-    top_shops = [
-        {"id": str(r[0]), "name": r[1], "revenue": float(r[2]), "tickets": r[3]}
-        for r in top_revenue_rows.fetchall()
-    ]
+    
+    top_shops_raw = []
+    for r in top_revenue_rows.fetchall():
+        shop_id = str(r[0])
+        shop_name = r[1]
+        curr = r[2]
+        raw_rev = float(r[3])
+        tickets_count = r[4]
+        norm_rev = raw_rev * EXCHANGE_RATES.get(curr, 1.0)
+        top_shops_raw.append({"id": shop_id, "name": shop_name, "revenue": norm_rev, "tickets": tickets_count})
+        
+    top_shops_raw.sort(key=lambda x: x["revenue"], reverse=True)
+    top_shops = top_shops_raw[:5]
 
     # Plan distribution
     plan_rows = await db.execute(
@@ -773,6 +792,60 @@ async def bulk_shop_action(
                 f"{len(shop_ids)} shops", f"Action: {action} → {updated} updated")
     return {"ok": True, "updated": updated, "action": action, "new_status": new_status}
 
+# ─────────────────────────── DB Query (Admin DB Viewer) ───────────────────────────
+
+@router.post("/db/query")
+async def run_db_query(
+    body: dict,
+    admin: dict = AdminUser,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Execute any SQL query against the database. Full access — admin only."""
+    from sqlalchemy import text
+    import time
+
+    query = (body.get("query") or "").strip()
+    if not query:
+        raise HTTPException(status_code=422, detail="query is required")
+
+    try:
+        start = time.monotonic()
+        result = await db.execute(text(query))
+        # Commit so that INSERT / UPDATE / DELETE / DDL changes are persisted
+        await db.commit()
+        duration_ms = round((time.monotonic() - start) * 1000)
+
+        if result.returns_rows:
+            columns = list(result.keys())
+            rows = [list(row) for row in result.fetchmany(5000)]  # up to 5000 rows
+            row_count = len(rows)
+        else:
+            columns = []
+            rows = []
+            row_count = result.rowcount if result.rowcount >= 0 else 0
+
+        # Serialize non-primitive types
+        for i, row in enumerate(rows):
+            for j, val in enumerate(row):
+                if isinstance(val, datetime):
+                    rows[i][j] = val.isoformat()
+                elif isinstance(val, uuid.UUID):
+                    rows[i][j] = str(val)
+                elif not isinstance(val, (str, int, float, bool, type(None))):
+                    rows[i][j] = str(val)
+
+        await _emit_audit("DB_QUERY", admin.get("email", "admin"), "", f"Query: {query[:200]}")
+
+        return {
+            "columns": columns,
+            "rows": rows,
+            "rowCount": row_count,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=f"Query error: {str(e)}")
 
 
 # ─────────────────────────── Shops ───────────────────────────

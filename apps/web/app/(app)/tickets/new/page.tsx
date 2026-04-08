@@ -16,6 +16,7 @@ import { api } from "@/lib/api/client";
 import { useEffect } from "react";
 import { buildNewTicketMessage, openWhatsApp, openSMS } from "@/lib/messaging";
 import { useAuthStore } from "@/store/authStore";
+import { useCurrency } from "@/store/shopStore";
 
 const schema = z.object({
     customer_phone: z.string().min(5, "Enter customer phone number"),
@@ -31,7 +32,7 @@ const schema = z.object({
         })
     ).optional(),
     warranty_days: z.string().optional(),
-    sla_deadline: z.string().optional(),
+    sla_hours: z.string().optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -68,6 +69,7 @@ export default function NewTicketPage() {
     const [createdTicket, setCreatedTicket] = useState<CreatedTicket | null>(null);
     const [team, setTeam] = useState<{ id: string; full_name?: string; email: string }[]>([]);
     const [assignedTo, setAssignedTo] = useState<string>("");
+    const currency = useCurrency();
 
     const {
         register,
@@ -120,7 +122,7 @@ export default function NewTicketPage() {
                 customer_signature: signature,
                 warranty_days: data.warranty_days ? parseInt(data.warranty_days, 10) : undefined,
                 assigned_to: assignedTo || undefined,
-                sla_deadline: data.sla_deadline ? new Date(data.sla_deadline).toISOString() : undefined,
+                sla_hours: data.sla_hours ? parseInt(data.sla_hours, 10) : undefined,
             });
             // Show notify modal instead of immediately redirecting
             setCreatedTicket({
@@ -365,11 +367,20 @@ export default function NewTicketPage() {
                             <label className="block text-sm font-medium text-foreground/90 mb-1">
                                 SLA Deadline <span className="text-muted-foreground">(optional)</span>
                             </label>
-                            <input
-                                {...register("sla_deadline")}
-                                type="datetime-local"
-                                className="w-full px-4 py-2.5 rounded-lg bg-muted border border-border text-foreground placeholder-muted-foreground focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition text-sm flex h-[42px]"
-                            />
+                            <select
+                                {...register("sla_hours")}
+                                className="w-full px-4 py-2.5 rounded-lg bg-muted border border-border text-foreground focus:outline-none focus:border-indigo-500 transition text-sm"
+                            >
+                                <option value="">No SLA</option>
+                                <option value="1">1 Hour</option>
+                                <option value="2">2 Hours</option>
+                                <option value="4">4 Hours</option>
+                                <option value="8">8 Hours</option>
+                                <option value="12">12 Hours</option>
+                                <option value="24">24 Hours (1 Day)</option>
+                                <option value="48">48 Hours (2 Days)</option>
+                                <option value="72">72 Hours (3 Days)</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -399,7 +410,7 @@ export default function NewTicketPage() {
                                 Estimated Cost <span className="text-muted-foreground">(optional)</span>
                             </label>
                             <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{currency}</span>
                                 <input
                                     {...register("estimated_cost")}
                                     type="number"
@@ -445,7 +456,7 @@ export default function NewTicketPage() {
                                         )}
                                     </div>
                                     <div className="w-32 relative">
-                                        <span className="absolute left-3 top-2.5 text-muted-foreground text-sm">₹</span>
+                                        <span className="absolute left-3 top-2.5 text-muted-foreground text-sm">{currency}</span>
                                         <input
                                             {...register(`initial_charges.${index}.amount`)}
                                             type="number"

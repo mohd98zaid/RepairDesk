@@ -41,6 +41,7 @@ class TicketCreate(BaseModel):
     customer_signature: str | None = None
     warranty_days: int | None = None
     sla_deadline: datetime | None = None
+    sla_hours: int | None = None
 
 
 class TicketUpdate(BaseModel):
@@ -53,6 +54,7 @@ class TicketUpdate(BaseModel):
     customer_signature: str | None = None
     warranty_days: int | None = None
     sla_deadline: datetime | None = None
+    sla_hours: int | None = None
 
 
 class TicketStatusUpdate(BaseModel):
@@ -171,6 +173,8 @@ class TicketListResponse(BaseModel):
     created_by_name: str | None = None
     assigned_to: str | None = None
     assigned_to_name: str | None = None
+    customer_name: str | None = None
+    customer_phone: str | None = None
     model_config = {"from_attributes": True}
 
 

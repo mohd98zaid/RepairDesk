@@ -111,3 +111,8 @@ Digital_Repair_Ticket_Management_App_Documentation.pdf
 !requirements.txt
 !runtime.txt
 !apps/**/runtime.txt
+
+# Testing Artifacts
+apps/web/test-results/
+apps/web/test_qr.png
+apps/web/test_camera.mjs

@@ -37,6 +37,7 @@ import { fmtTicketId } from "@/lib/utils/ticketId";
 import type { TicketDetail } from "@/types";
 import { PreRepairChecklist, type ChecklistItem, defaultChecklist } from "@/components/tickets/PreRepairChecklist";
 import { buildStatusUpdateMessage, buildFeedbackMessage, openWhatsApp, openSMS } from "@/lib/messaging";
+import { useCurrency } from "@/store/shopStore";
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
     RECEIVED: ["IN_PROGRESS", "WAITING_PARTS", "CANCELLED"],
@@ -127,6 +128,7 @@ function StarRating({ ticket, onUpdate }: { ticket: TicketDetail; onUpdate: (t: 
 function PrintLabel({ ticket }: {
     ticket: TicketDetail;
 }) {
+    const currency = useCurrency();
     async function handlePrint() {
         // Fetch live shop details for the invoice header
         let shop: Shop | null = null;
@@ -337,15 +339,15 @@ function PrintLabel({ ticket }: {
         return `<tr>
           <td>${escHtml(p.name)}</td>
           <td>${qty}</td>
-          <td>Rs. ${unit.toFixed(2)}</td>
-          <td>Rs. ${line.toFixed(2)}</td>
+          <td>${currency} ${unit.toFixed(2)}</td>
+          <td>${currency} ${line.toFixed(2)}</td>
         </tr>`;
     }).join("")}
-    <tr class="subtotal-row"><td colspan="3">Parts Subtotal</td><td>Rs. ${partsCost.toFixed(2)}</td></tr>
+    <tr class="subtotal-row"><td colspan="3">Parts Subtotal</td><td>${currency} ${partsCost.toFixed(2)}</td></tr>
     ` : (partsCost > 0 ? `
     <tr><td colspan="4" class="group-label">&#128296; Parts &amp; Components</td></tr>
-    <tr><td>Parts &amp; Components</td><td>—</td><td>—</td><td>Rs. ${partsCost.toFixed(2)}</td></tr>
-    <tr class="subtotal-row"><td colspan="3">Parts Subtotal</td><td>Rs. ${partsCost.toFixed(2)}</td></tr>
+    <tr><td>Parts &amp; Components</td><td>—</td><td>—</td><td>${currency} ${partsCost.toFixed(2)}</td></tr>
+    <tr class="subtotal-row"><td colspan="3">Parts Subtotal</td><td>${currency} ${partsCost.toFixed(2)}</td></tr>
     ` : "")}
 
     <!-- Charges / Labour section -->
@@ -354,10 +356,10 @@ function PrintLabel({ ticket }: {
     ${charges.map((c: any) => `<tr>
       <td>${escHtml(c.name)}</td>
       <td>1</td>
-      <td>Rs. ${parseFloat(c.amount).toFixed(2)}</td>
-      <td>Rs. ${parseFloat(c.amount).toFixed(2)}</td>
+      <td>${currency} ${parseFloat(c.amount).toFixed(2)}</td>
+      <td>${currency} ${parseFloat(c.amount).toFixed(2)}</td>
     </tr>`).join("")}
-    <tr class="subtotal-row"><td colspan="3">Labour Subtotal</td><td>Rs. ${chargesTotal.toFixed(2)}</td></tr>
+    <tr class="subtotal-row"><td colspan="3">Labour Subtotal</td><td>${currency} ${chargesTotal.toFixed(2)}</td></tr>
     ` : ""}
 
     <!-- Empty state -->
@@ -368,7 +370,7 @@ function PrintLabel({ ticket }: {
     <!-- Grand total -->
     <tr class="total-row">
       <td colspan="3">Grand Total</td>
-      <td>Rs. ${finalCost.toFixed(2)}</td>
+      <td>${currency} ${finalCost.toFixed(2)}</td>
     </tr>
   </tbody>
 </table>
@@ -478,6 +480,7 @@ export default function TicketDetailPage() {
     const { id } = useParams<{ id: string }>();
     const router = useRouter();
     const { user } = useAuthStore();
+    const currency = useCurrency();
     const [ticket, setTicket] = useState<TicketDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [statusNotes, setStatusNotes] = useState("");
@@ -969,7 +972,7 @@ export default function TicketDetailPage() {
                         <InfoRow label="Estimated Cost" value={
                             editingEstCost ? (
                                 <div className="flex items-center gap-2">
-                                    <span className="text-muted-foreground">₹</span>
+                                    <span className="text-muted-foreground">{currency}</span>
                                     <input
                                         type="number"
                                         value={estCostInput}
@@ -987,7 +990,7 @@ export default function TicketDetailPage() {
                                 </div>
                             ) : (
                                 <div className="flex items-center gap-2">
-                                    <span>{ticket.estimated_cost ? `₹${ticket.estimated_cost}` : "—"}</span>
+                                    <span>{ticket.estimated_cost ? `${currency}${ticket.estimated_cost}` : "—"}</span>
                                     {ticket.status !== "DELIVERED" && ticket.status !== "CANCELLED" && (
                                         <button
                                             onClick={() => { setEstCostInput(ticket.estimated_cost?.toString() || ""); setEditingEstCost(true); }}
@@ -1000,11 +1003,11 @@ export default function TicketDetailPage() {
                                 </div>
                             )
                         } />
-                        <InfoRow label="Parts Cost" value={ticket.parts_cost ? `₹${ticket.parts_cost}` : "—"} />
+                        <InfoRow label="Parts Cost" value={ticket.parts_cost ? `${currency}${ticket.parts_cost}` : "—"} />
                         <InfoRow label="Final Cost" value={
                             editingCost ? (
                                 <div className="flex items-center gap-2">
-                                    <span className="text-muted-foreground">₹</span>
+                                    <span className="text-muted-foreground">{currency}</span>
                                     <input
                                         type="number"
                                         value={costInput}
@@ -1022,7 +1025,7 @@ export default function TicketDetailPage() {
                                 </div>
                             ) : (
                                 <div className="flex items-center gap-2">
-                                    <span>{ticket.final_cost ? `₹${ticket.final_cost}` : "—"}</span>
+                                    <span>{ticket.final_cost ? `${currency}${ticket.final_cost}` : "—"}</span>
                                     {ticket.status !== "DELIVERED" && ticket.status !== "CANCELLED" && (
                                         <button
                                             onClick={() => { setCostInput(ticket.final_cost?.toString() || ""); setEditingCost(true); }}
@@ -1039,7 +1042,7 @@ export default function TicketDetailPage() {
                             label="Profit"
                             value={ticket.profit ? (
                                 <span className={parseFloat(ticket.profit) >= 0 ? "text-success font-semibold" : "text-danger flex font-semibold"}>
-                                    ₹{ticket.profit}
+                                    {currency}{ticket.profit}
                                 </span>
                             ) : "—"}
                         />
@@ -1068,7 +1071,7 @@ export default function TicketDetailPage() {
                                         className="flex-1 bg-card border border-border rounded px-2 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary shadow-sm"
                                     />
                                     <div className="w-24 relative shadow-sm">
-                                        <span className="absolute left-2 top-2 text-muted-foreground text-sm">₹</span>
+                                        <span className="absolute left-2 top-2 text-muted-foreground text-sm">{currency}</span>
                                         <input
                                             type="number"
                                             placeholder="0.00"
@@ -1101,7 +1104,7 @@ export default function TicketDetailPage() {
                                         <div key={String(charge.id)} className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
                                             <span className="text-xs text-foreground font-medium">{charge.name}</span>
                                             <div className="flex items-center gap-3">
-                                                <span className="text-xs text-foreground bg-muted px-2 py-0.5 rounded border border-border shadow-sm">₹{charge.amount}</span>
+                                                <span className="text-xs text-foreground bg-muted px-2 py-0.5 rounded border border-border shadow-sm">{currency}{charge.amount}</span>
                                                 {ticket.status !== "DELIVERED" && ticket.status !== "CANCELLED" && (
                                                     <button
                                                         onClick={() => handleRemoveCharge(charge.id)}
@@ -1314,12 +1317,12 @@ export default function TicketDetailPage() {
                                     {ticket.estimated_cost && (
                                         <div className="flex justify-between text-muted-foreground">
                                             <span>Original Estimate:</span>
-                                            <span>₹{ticket.estimated_cost}</span>
+                                            <span>{currency}{ticket.estimated_cost}</span>
                                         </div>
                                     )}
                                     <div className="flex justify-between text-foreground">
                                         <span>Parts Cost:</span>
-                                        <span>₹{parseFloat(ticket.parts_cost || "0").toFixed(2)}</span>
+                                        <span>{currency}{parseFloat(ticket.parts_cost || "0").toFixed(2)}</span>
                                     </div>
 
                                     {ticket.charges && ticket.charges.length > 0 && (
@@ -1328,7 +1331,7 @@ export default function TicketDetailPage() {
                                             {ticket.charges.map(c => (
                                                 <div key={String(c.id)} className="flex justify-between text-muted-foreground text-xs pl-2">
                                                     <span>{c.name}:</span>
-                                                    <span>₹{parseFloat(c.amount).toFixed(2)}</span>
+                                                    <span>{currency}{parseFloat(c.amount).toFixed(2)}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -1337,7 +1340,7 @@ export default function TicketDetailPage() {
                                     <div className="flex justify-between text-foreground">
                                         <span>Total Extra Charges:</span>
                                         <span>
-                                            ₹{(ticket.charges?.reduce((acc, c) => acc + parseFloat(c.amount), 0) || 0).toFixed(2)}
+                                            {currency}{(ticket.charges?.reduce((acc, c) => acc + parseFloat(c.amount), 0) || 0).toFixed(2)}
                                         </span>
                                     </div>
                                 </div>
@@ -1346,13 +1349,13 @@ export default function TicketDetailPage() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-foreground mb-1">
-                                        Estimated Cost (₹)
+                                        Estimated Cost ({currency})
                                     </label>
                                     <p className="text-xs text-muted-foreground mb-2">
                                         Update the estimate if needed.
                                     </p>
                                     <div className="relative">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₹</span>
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{currency}</span>
                                         <input
                                             type="number"
                                             value={readyEstCost}
@@ -1364,13 +1367,13 @@ export default function TicketDetailPage() {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-foreground mb-1">
-                                        Final Cost (₹)
+                                        Final Cost ({currency})
                                     </label>
                                     <p className="text-xs text-muted-foreground mb-2">
                                         The final cost to charge.
                                     </p>
                                     <div className="relative">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₹</span>
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{currency}</span>
                                         <input
                                             type="number"
                                             value={readyFinalCost}

@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -104,7 +104,9 @@ async def create_ticket(
         pre_repair_checklist=data.pre_repair_checklist,
         customer_signature=data.customer_signature,
         warranty_days=data.warranty_days,
-        sla_deadline=data.sla_deadline,
+        sla_deadline=data.sla_deadline if data.sla_deadline else (
+            datetime.now(timezone.utc) + timedelta(hours=data.sla_hours) if data.sla_hours else None
+        ),
         status="RECEIVED",
     )
     db.add(ticket)
@@ -146,7 +148,7 @@ async def list_tickets(
     from app.modules.customers.models import Customer
 
     base_q = (
-        select(Ticket)
+        select(Ticket, Customer.name.label("customer_name"), Customer.phone.label("customer_phone"))
         .join(Customer, Ticket.customer_id == Customer.id)
         .where(Ticket.shop_id == shop_id, Ticket.is_deleted == False)
     )
@@ -172,12 +174,20 @@ async def list_tickets(
     items_result = await db.execute(
         base_q.order_by(Ticket.created_at.desc()).offset(offset).limit(per_page)
     )
+    
+    items = []
+    for row in items_result.all():
+        ticket, c_name, c_phone = row
+        ticket.customer_name = c_name
+        ticket.customer_phone = c_phone
+        items.append(ticket)
+
     return {
         "total": total,
         "page": page,
         "per_page": per_page,
         "pages": max(1, -(-total // per_page)),
-        "items": items_result.scalars().all(),
+        "items": items,
     }
 
 
@@ -202,9 +212,12 @@ async def update_ticket(
     db: AsyncSession,
 ) -> Ticket:
     ticket = await get_ticket(shop_id, ticket_id, db)
-    ALLOWED_FIELDS = {"device_model", "technician_notes", "estimated_cost", "final_cost", "assigned_to", "pre_repair_checklist", "customer_signature", "warranty_days", "sla_deadline"}
+    ALLOWED_FIELDS = {"device_model", "technician_notes", "estimated_cost", "final_cost", "assigned_to", "pre_repair_checklist", "customer_signature", "warranty_days", "sla_deadline", "sla_hours"}
     for field, value in data.model_dump(exclude_none=True).items():
         if field not in ALLOWED_FIELDS:
+            continue
+        if field == "sla_hours":
+            ticket.sla_deadline = datetime.now(timezone.utc) + timedelta(hours=value)
             continue
         if field in ("estimated_cost", "final_cost") and value is not None:
             setattr(ticket, field, Decimal(value))

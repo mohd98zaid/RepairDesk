@@ -5,6 +5,7 @@ import { Plus, Search, RefreshCw, X, Loader2, FileText, CheckCircle2, ChevronRig
 import { purchaseOrdersApi, vendorsApi, inventoryApi, CreatePOPayload, CreatePOItemPayload } from "@/lib/api/inventory";
 import { PurchaseOrder, Vendor, InventoryItem } from "@/types";
 import clsx from "clsx";
+import { useCurrency } from "@/store/shopStore";
 
 // ── Create PO Modal ────────────────────────────────────────────────────────────
 function POModal({
@@ -32,6 +33,7 @@ function POModal({
     const [selectedItem, setSelectedItem] = useState("");
     const [qty, setQty] = useState(1);
     const [cost, setCost] = useState("");
+    const currency = useCurrency();
 
     useEffect(() => {
         Promise.all([
@@ -161,7 +163,7 @@ function POModal({
                                     <input type="number" min="1" value={qty} onChange={e => setQty(Number(e.target.value))} className="w-full px-2 py-1.5 rounded-md bg-background border border-border text-sm" />
                                 </div>
                                 <div className="w-24">
-                                    <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Unit Cst (₹)</label>
+                                    <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Unit Cst ({currency})</label>
                                     <input type="number" step="0.01" value={cost} onChange={e => setCost(e.target.value)} className="w-full px-2 py-1.5 rounded-md bg-background border border-border text-sm" />
                                 </div>
                                 <button onClick={handleAddLine} className="px-3 py-1.5 bg-primary text-white rounded-md text-sm font-medium hover:bg-primary/90 transition shadow-sm h-[34px]">
@@ -178,10 +180,10 @@ function POModal({
                                         <div key={idx} className="flex justify-between items-center py-2 border-b border-border/50 last:border-0">
                                             <div>
                                                 <p className="font-medium text-sm text-foreground">{part?.name || "Unknown Part"}</p>
-                                                <p className="text-xs text-muted-foreground">{line.quantity} units @ ₹{line.unit_cost}</p>
+                                                <p className="text-xs text-muted-foreground">{line.quantity} units @ {currency}{line.unit_cost}</p>
                                             </div>
                                             <div className="flex items-center gap-3">
-                                                <span className="font-bold text-sm text-foreground">₹{(Number(line.unit_cost) * line.quantity).toFixed(2)}</span>
+                                                <span className="font-bold text-sm text-foreground">{currency}{(Number(line.unit_cost) * line.quantity).toFixed(2)}</span>
                                                 <button onClick={() => handleRemoveLine(idx)} className="text-red-500 hover:text-red-400 p-1">
                                                     <X className="w-4 h-4" />
                                                 </button>
@@ -194,7 +196,7 @@ function POModal({
                             <div className="bg-muted p-3 flex justify-between items-center border-t border-border">
                                 <span className="text-sm font-bold text-foreground">Total:</span>
                                 <span className="text-lg font-black text-primary">
-                                    ₹{(form.items || []).reduce((acc, curr) => acc + (Number(curr.unit_cost) * curr.quantity), 0).toFixed(2)}
+                                    {currency}{(form.items || []).reduce((acc, curr) => acc + (Number(curr.unit_cost) * curr.quantity), 0).toFixed(2)}
                                 </span>
                             </div>
                         </div>
@@ -221,6 +223,7 @@ export default function PurchaseOrdersPage() {
     const [search, setSearch] = useState("");
     const [showModal, setShowModal] = useState(false);
     const [updating, setUpdating] = useState<string | null>(null);
+    const currency = useCurrency();
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -336,7 +339,7 @@ export default function PurchaseOrdersPage() {
                                         <StatusBadge status={po.status} />
                                     </td>
                                     <td className="px-4 py-4 font-bold text-foreground">
-                                        ₹{po.total_amount}
+                                        {currency}{po.total_amount}
                                     </td>
                                     <td className="px-4 py-4 text-muted-foreground">
                                         {new Date(po.created_at).toLocaleDateString()}

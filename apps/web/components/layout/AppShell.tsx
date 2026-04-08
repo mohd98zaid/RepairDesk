@@ -29,6 +29,7 @@ import {
 import { useEffect, useRef, useState, useCallback } from "react";
 import { MonitorSmartphone } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
+import { useShopStore } from "@/store/shopStore";
 import { api } from "@/lib/api/client";
 import { clsx } from "clsx";
 import { GlobalSearch } from "./GlobalSearch";
@@ -635,6 +636,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         if (!user || !mounted) return;
         api.get("/shops/me").then((res) => {
+            if (res.data) {
+                useShopStore.getState().setShop(res.data);
+            }
             setShopStatus(res.data?.shop_status || 'ACTIVE');
             const skipOnboarding = localStorage.getItem("repairdesk_skip_onboarding") === "true";
             if (!res.data?.address && pathname !== "/onboarding" && !skipOnboarding) {
@@ -796,7 +800,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
             {/* Mobile drawer — slides in from right when hamburger tapped */}
             {mobileMenuOpen && (
-                <div className="md:hidden fixed inset-0 z-40" style={{ top: '56px' }}>
+                <div className="md:hidden fixed inset-0 z-[60]">
                     {/* Backdrop — tap to close */}
                     <div
                         className="absolute inset-0"
@@ -805,7 +809,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     />
                     {/* Drawer panel */}
                     <div
-                        className="absolute top-0 right-0 bottom-0 w-72 flex flex-col p-4"
+                        className="absolute top-0 right-0 bottom-0 w-72 flex flex-col p-4 pt-2"
                         style={{
                             background: 'var(--glass-bg)',
                             backdropFilter: 'blur(28px) saturate(200%)',
@@ -815,6 +819,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                             overflow: 'hidden',
                         }}
                     >
+                        <div className="flex justify-end mb-2">
+                            <button onClick={() => setMobileMenuOpen(false)} className="w-10 h-10 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition" aria-label="Close Mobile Menu">
+                                <X className="w-6 h-6" />
+                            </button>
+                        </div>
                         <SidebarContent onNavClick={() => setMobileMenuOpen(false)} />
                     </div>
                 </div>

@@ -10,12 +10,15 @@ import {
 } from '@/lib/admin-api';
 import { CreditCard, Plus, Trash2, Check, X, RefreshCw, Eye, EyeOff, Users, IndianRupee, Package, Square, CheckSquare } from 'lucide-react';
 
+const DEFAULT_CURRENCY = '₹';
+
 export default function PlansPage() {
     const router = useRouter();
     const [plans, setPlans] = useState<PlanData[]>([]);
     const [features, setFeatures] = useState<FeatureData[]>([]);
     const [stats, setStats] = useState<SubscriptionStats | null>(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [tab, setTab] = useState<'plans' | 'features' | 'subscriptions'>('plans');
 
     // Create plan form
@@ -40,12 +43,16 @@ export default function PlansPage() {
 
     async function load() {
         setLoading(true);
+        setError(null);
         try {
             const [p, f, s] = await Promise.all([listPlans(), listFeatures(), getSubscriptionStats()]);
             setPlans(p);
             setFeatures(f);
             setStats(s);
-        } catch { router.push('/admin/login'); }
+        } catch (e: any) {
+            if (e?.response?.status === 401) { router.push('/admin/login'); return; }
+            setError(e?.response?.data?.detail || e?.message || 'Failed to load plans data');
+        }
         finally { setLoading(false); }
     }
 
@@ -161,6 +168,15 @@ export default function PlansPage() {
                     </button>
                 </header>
 
+                {/* Error State */}
+                {error && (
+                    <div style={{ textAlign: 'center', padding: 60 }}>
+                        <p style={{ color: '#f87171', fontSize: 16, fontWeight: 600, marginBottom: 8 }}>⚠ Failed to load billing data</p>
+                        <p style={{ color: '#64748b', fontSize: 13, marginBottom: 16 }}>{error}</p>
+                        <button onClick={load} style={{ background: 'rgba(124,58,237,0.3)', border: '1px solid rgba(124,58,237,0.4)', color: '#c4b5fd', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontSize: 13 }}>Retry</button>
+                    </div>
+                )}
+
                 {/* KPI Cards */}
                 {stats && (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
@@ -176,7 +192,7 @@ export default function PlansPage() {
                                 <p style={{ margin: 0, fontSize: 12, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>MRR</p>
                                 <IndianRupee size={17} style={{ color: '#fbbf24' }} />
                             </div>
-                            <p style={{ margin: 0, fontSize: 26, fontWeight: 800, color: '#fff' }}>₹{stats.mrr.toLocaleString()}</p>
+                            <p style={{ margin: 0, fontSize: 26, fontWeight: 800, color: '#fff' }}>{DEFAULT_CURRENCY}{stats.mrr.toLocaleString()}</p>
                         </div>
                         <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 20 }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -227,8 +243,8 @@ export default function PlansPage() {
                                     {[
                                         { key: 'name', label: 'Name', placeholder: 'Pro' },
                                         { key: 'slug', label: 'Slug', placeholder: 'pro' },
-                                        { key: 'price_monthly', label: 'Monthly Price (₹)', placeholder: '999' },
-                                        { key: 'price_yearly', label: 'Yearly Price (₹)', placeholder: '9999' },
+                                        { key: 'price_monthly', label: `Monthly Price (${DEFAULT_CURRENCY})`, placeholder: '999' },
+                                        { key: 'price_yearly', label: `Yearly Price (${DEFAULT_CURRENCY})`, placeholder: '9999' },
                                     ].map(f => (
                                         <div key={f.key}>
                                             <label style={{ display: 'block', fontSize: 11, color: '#64748b', marginBottom: 4 }}>{f.label}</label>
@@ -309,8 +325,8 @@ export default function PlansPage() {
                                     </div>
                                     {plan.description && <p style={{ margin: '0 0 8px', fontSize: 13, color: '#94a3b8' }}>{plan.description}</p>}
                                     <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-                                        <div><span style={{ fontSize: 11, color: '#64748b' }}>Monthly</span><p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#fbbf24' }}>₹{plan.price_monthly}</p></div>
-                                        <div><span style={{ fontSize: 11, color: '#64748b' }}>Yearly</span><p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#fbbf24' }}>₹{plan.price_yearly}</p></div>
+                                        <div><span style={{ fontSize: 11, color: '#64748b' }}>Monthly</span><p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#fbbf24' }}>{DEFAULT_CURRENCY}{plan.price_monthly}</p></div>
+                                        <div><span style={{ fontSize: 11, color: '#64748b' }}>Yearly</span><p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#fbbf24' }}>{DEFAULT_CURRENCY}{plan.price_yearly}</p></div>
                                     </div>
 
                                     {/* ── Feature Checkboxes for Plan ── */}

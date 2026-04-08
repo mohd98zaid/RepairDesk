@@ -279,29 +279,44 @@ def create_app() -> FastAPI:
     async def add_security_headers(request: Request, call_next):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = (
-            "camera=(), microphone=(), geolocation=(), payment=()"
-        )
+
         if settings.is_production:
             response.headers["Strict-Transport-Security"] = (
                 "max-age=63072000; includeSubDomains; preload"
             )
-        # Content-Security-Policy — strict, no unsafe-inline for scripts
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: blob: https:; "
-            "font-src 'self' data:; "
-            "connect-src 'self' ws: wss: https:; "
-            "frame-ancestors 'none'; "
-            "object-src 'none'; "
-            "base-uri 'self'; "
-            "form-action 'self';"
-        )
+
+        # Allow docs pages to be embedded in iframe from frontend (for admin API Viewer)
+        frontend_url = settings.frontend_url or "http://localhost:3000"
+        if request.url.path in ("/docs", "/redoc", "/openapi.json"):
+            # Don't set X-Frame-Options (it conflicts with CSP frame-ancestors)
+            # Use frame-ancestors to allow embedding from the frontend
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self' https://cdn.jsdelivr.net; "
+                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "img-src 'self' data: blob: https:; "
+                "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; "
+                f"frame-ancestors 'self' {frontend_url}; "
+                "object-src 'none';"
+            )
+        else:
+            response.headers["X-Frame-Options"] = "DENY"
+            # Content-Security-Policy — strict
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: blob: https:; "
+                "font-src 'self' data:; "
+                "connect-src 'self' ws: wss: https:; "
+                "frame-src 'self'; "
+                "frame-ancestors 'self'; "
+                "object-src 'none'; "
+                "base-uri 'self'; "
+                "form-action 'self';"
+            )
         return response
 
     # ─── REMOVED: /debug/migrate endpoint (was a catastrophic security hole) ──

@@ -17,6 +17,8 @@ class ShopResponse(BaseModel):
     plan: str
     is_active: bool
     shop_status: str = "ACTIVE"
+    currency: str = "INR"
+    currency_symbol: str = "₹"
     admin_note: str | None = None
     created_at: datetime
 
@@ -31,4 +33,6 @@ class ShopUpdate(BaseModel):
     pincode: str | None = None
     gst_number: str | None = None
     logo_data: str | None = None
+    currency: str | None = None
+    currency_symbol: str | None = None
 

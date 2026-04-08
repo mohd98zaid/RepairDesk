@@ -5,12 +5,14 @@ import Link from "next/link";
 import { ArrowLeft, IndianRupee, PieChart, Activity, Loader2, Wrench, Receipt } from "lucide-react";
 import { reportsApi, RevenueBreakdownData } from "@/lib/api/reports";
 import { useAuthStore } from "@/store/authStore";
+import { useCurrency } from "@/store/shopStore";
 
 export default function RevenueBreakdownPage() {
     const { accessToken } = useAuthStore();
     const [data, setData] = useState<RevenueBreakdownData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
+    const currency = useCurrency();
 
     useEffect(() => {
         if (accessToken) {
@@ -86,7 +88,7 @@ export default function RevenueBreakdownPage() {
                         Combined Total Revenue
                     </p>
                     <h2 className="text-5xl font-black text-foreground tracking-tight">
-                        ₹{totalRev.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {currency}{totalRev.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </h2>
                 </div>
             </div>
@@ -108,7 +110,7 @@ export default function RevenueBreakdownPage() {
 
                     <div className="flex items-end justify-between border-t border-border/50 pt-4 mt-auto">
                         <span className="text-3xl font-bold text-violet-300">
-                            ₹{partsRev.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {currency}{partsRev.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                         {totalRev > 0 && (
                             <span className="text-xs font-medium text-violet-400 bg-violet-400/10 px-2 py-1 rounded">
@@ -138,7 +140,7 @@ export default function RevenueBreakdownPage() {
                                         <div className="flex items-center justify-between">
                                             <span className="font-medium text-foreground">{charge.name}</span>
                                             <span className="font-bold text-emerald-400">
-                                                ₹{charge.amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                {currency}{charge.amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </span>
                                         </div>
                                         {totalRev > 0 && (

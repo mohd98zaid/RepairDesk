@@ -8,9 +8,20 @@ import { api, getErrorMessage } from "@/lib/api/client";
 import { compressImage } from "@/lib/utils/imageCompress";
 import {
     Wrench, MapPin, Hash, Store, Camera,
-    User, ChevronRight, Check, Loader2, Upload, X
+    User, ChevronRight, Check, Loader2, Upload, X, IndianRupee
 } from "lucide-react";
 import clsx from "clsx";
+
+const CURRENCIES = [
+    { code: "INR", symbol: "₹", label: "Indian Rupee (₹)" },
+    { code: "USD", symbol: "$", label: "US Dollar ($)" },
+    { code: "AED", symbol: "د.إ", label: "UAE Dirham (د.إ)" },
+    { code: "EUR", symbol: "€", label: "Euro (€)" },
+    { code: "GBP", symbol: "£", label: "British Pound (£)" },
+    { code: "AUD", symbol: "A$", label: "Australian Dollar (A$)" },
+    { code: "CAD", symbol: "C$", label: "Canadian Dollar (C$)" },
+    { code: "SGD", symbol: "S$", label: "Singapore Dollar (S$)" },
+];
 
 function FieldError({ msg }: { msg?: string }) {
     if (!msg) return null;
@@ -86,6 +97,7 @@ function OnboardingForm() {
     const [address, setAddress] = useState("");
     const [pincode, setPincode] = useState("");
     const [gst, setGst] = useState("");
+    const [currency, setCurrency] = useState("INR");
     const [shopPic, setShopPic] = useState<string | null>(null);
     const [ownerPic, setOwnerPic] = useState<string | null>(null);
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -95,6 +107,7 @@ function OnboardingForm() {
     useEffect(() => {
         api.get("/shops/me").then(r => {
             if (r.data?.name) setShopName(r.data.name);
+            if (r.data?.currency) setCurrency(r.data.currency);
         }).catch(() => { });
     }, []);
 
@@ -123,6 +136,8 @@ function OnboardingForm() {
                     pincode: pincode.trim(),
                     gst_number: gst.trim().toUpperCase() || null,
                     logo_data: shopPic || null,
+                    currency: currency,
+                    currency_symbol: CURRENCIES.find(c => c.code === currency)?.symbol || "₹",
                 }),
                 ownerPic ? api.patch("/users/me", { avatar_data: ownerPic }) : Promise.resolve(),
             ]);
@@ -221,6 +236,18 @@ function OnboardingForm() {
                                     className="w-full px-4 py-2.5 rounded-lg bg-muted border border-border text-foreground placeholder-muted-foreground focus:outline-none focus:border-indigo-500 text-sm uppercase" />
                                 <FieldError msg={errors.gst} />
                             </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-foreground/90 mb-1">
+                                <IndianRupee className="w-3.5 h-3.5 text-muted-foreground inline mr-1.5" />Default Currency
+                            </label>
+                            <select value={currency} onChange={e => setCurrency(e.target.value)}
+                                className="w-full px-4 py-2.5 rounded-lg bg-muted border border-border text-foreground placeholder-muted-foreground focus:outline-none focus:border-indigo-500 text-sm">
+                                {CURRENCIES.map(c => (
+                                    <option key={c.code} value={c.code}>{c.label}</option>
+                                ))}
+                            </select>
                         </div>
 
                         <div className="border-t border-border pt-5 space-y-4">

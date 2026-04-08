@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Plus, Search, SlidersHorizontal, RefreshCw, User } from "lucide-react";
+import { Plus, Search, SlidersHorizontal, RefreshCw, User, Smartphone, Laptop, Tablet, Watch, Printer, Box, Clock } from "lucide-react";
 import { ticketsApi } from "@/lib/api/tickets";
 import { StatusBadge } from "@/components/tickets/StatusBadge";
 import { fmtTicketId } from "@/lib/utils/ticketId";
 import { InfiniteScrollObserver } from "@/components/InfiniteScrollObserver";
+import { useCurrency } from "@/store/shopStore";
 
 const STATUSES = ["RECEIVED", "IN_PROGRESS", "WAITING_PARTS", "READY", "DELIVERED", "CANCELLED"];
 
@@ -31,19 +32,36 @@ interface TicketRow {
     created_at: string;
     sla_deadline?: string | null;
     assigned_to_name?: string | null;
+    customer_name?: string | null;
+    customer_phone?: string | null;
 }
 
 function TicketSkeleton() {
     return (
-        <div className="bg-card border border-border shadow-sm rounded-xl p-4 flex gap-4 animate-pulse">
-            <div className="w-8 h-4 bg-muted rounded" />
-            <div className="flex-1 space-y-2">
-                <div className="h-3 bg-muted rounded w-1/3" />
+        <div className="bg-card border border-border shadow-sm rounded-xl p-4 sm:p-5 flex flex-col gap-4 animate-pulse h-[140px] sm:h-[200px]">
+            <div className="flex justify-between items-start">
+                <div className="flex gap-3 items-center">
+                    <div className="w-10 h-10 bg-muted rounded-lg" />
+                    <div className="w-24 h-5 bg-muted rounded" />
+                </div>
+                <div className="w-20 h-6 bg-muted rounded-full" />
+            </div>
+            <div className="flex-1 space-y-2 mt-2">
+                <div className="h-3 bg-muted rounded w-3/4" />
                 <div className="h-3 bg-muted rounded w-1/2" />
             </div>
-            <div className="w-20 h-5 bg-muted rounded-full" />
         </div>
     );
+}
+
+function getDeviceIcon(type: string) {
+    const t = type.toLowerCase();
+    if (t.includes("phone")) return Smartphone;
+    if (t.includes("laptop") || t.includes("desktop") || t.includes("mac") || t.includes("pc")) return Laptop;
+    if (t.includes("tablet") || t.includes("pad")) return Tablet;
+    if (t.includes("watch")) return Watch;
+    if (t.includes("print")) return Printer;
+    return Box;
 }
 
 export default function TicketsPage() {
@@ -55,6 +73,7 @@ export default function TicketsPage() {
     const [statusFilter, setStatusFilter] = useState<string>("");
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
+    const currency = useCurrency();
 
     const load = useCallback(async () => {
         if (page === 1) setLoading(true);
@@ -160,52 +179,110 @@ export default function TicketsPage() {
                         </Link>
                     </div>
                 ) : (
-                    tickets.map((ticket) => (
+                    tickets.map((ticket) => {
+                        const DeviceIcon = getDeviceIcon(ticket.device_type);
+                        const isOverdue = ticket.sla_deadline && new Date(ticket.sla_deadline) < new Date() && ticket.status !== 'DELIVERED';
+                        
+                        return (
                         <Link
                             key={ticket.id}
                             href={`/tickets/${ticket.id}`}
-                            className="bg-card border border-border/80 shadow-[0_1px_2px_rgba(0,0,0,0.05)] rounded-lg p-2.5 flex flex-col hover:border-primary/40 hover:bg-muted/10 transition-colors group gap-1.5"
+                            className={`bg-card shadow-sm rounded-xl p-3 sm:p-5 flex flex-col hover:-translate-y-0.5 transition-all duration-300 group gap-2 sm:gap-3 relative overflow-hidden text-left h-[140px] sm:h-[180px]
+                                ${isOverdue ? 'border-2 border-danger/40 hover:shadow-[0_8px_30px_rgba(239,68,68,0.15)] glow-danger' 
+                                            : 'border border-border/80 hover:border-primary/50 hover:shadow-[0_8px_30px_rgba(99,102,241,0.12)]'}`}
                         >
-                            <div className="flex items-center justify-between w-full">
-                                <div className="flex items-center gap-2 min-w-0">
-                                    <span className="text-primary text-[10px] font-bold font-mono px-1.5 py-0.5 bg-primary/10 rounded shrink-0 leading-none">
-                                        {fmtTicketId(ticket.ticket_number)}
-                                    </span>
-                                    <span className="text-foreground font-semibold text-[11px] sm:text-xs truncate">
-                                        {ticket.device_type} {ticket.device_model && <span className="font-normal text-muted-foreground opacity-80">· {ticket.device_model}</span>}
-                                    </span>
+                            {/* Decorative background glow for desktop */}
+                            <div className={`hidden sm:block absolute -top-12 -right-12 w-32 h-32 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none ${isOverdue ? 'bg-danger/10' : 'bg-primary/10'}`} />
+
+                            {/* Top row: Icon + ID + Status */}
+                            <div className="flex items-start justify-between w-full">
+                                <div className="flex items-center gap-2 sm:gap-3">
+                                    <div className="p-1.5 sm:p-2 rounded-lg bg-muted text-foreground border border-border shrink-0 group-hover:scale-105 transition-transform duration-300">
+                                        <DeviceIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                                    </div>
+                                    <div className="flex flex-col items-start lg:gap-0.5">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-[10px] sm:text-[11px] font-bold font-mono px-1.5 py-0.5 sm:px-2 rounded-md leading-none ${isOverdue ? 'bg-danger/10 text-danger' : 'bg-primary/10 text-primary'}`}>
+                                                {fmtTicketId(ticket.ticket_number)}
+                                            </span>
+                                        </div>
+                                        <h3 className="text-foreground font-bold text-xs sm:text-sm hidden sm:block truncate max-w-[150px]">
+                                            {ticket.device_type} {ticket.device_model && <span className="font-normal text-muted-foreground">· {ticket.device_model}</span>}
+                                        </h3>
+                                    </div>
                                 </div>
-                                <div className="shrink-0 transform scale-[0.75] origin-right ml-2 -my-2 flex items-center">
+                                <div className="shrink-0 flex items-center transform scale-90 sm:scale-100 origin-top-right">
                                     <StatusBadge status={ticket.status} />
                                 </div>
                             </div>
                             
-                            <div className="flex flex-wrap items-center justify-between gap-x-2 w-full mt-0.5">
-                                <div className="text-muted-foreground opacity-90 text-[10px] truncate max-w-[50%] xs:max-w-[65%] leading-tight pr-2 border-r border-border/40">
-                                    {ticket.reported_issue || "No details"}
-                                </div>
+                            {/* Mobile titles (if hidden above) */}
+                            <div className="sm:hidden text-foreground font-semibold text-[11px] truncate w-full">
+                                {ticket.device_type} {ticket.device_model && <span className="font-normal text-muted-foreground opacity-80">· {ticket.device_model}</span>}
+                            </div>
+
+                            {/* Middle row: Issue Details & Customer */}
+                            <div className="flex-1 w-full flex flex-col pt-1">
+                                <p className="text-muted-foreground text-[10px] sm:text-xs line-clamp-1 sm:line-clamp-2 leading-relaxed">
+                                    {ticket.reported_issue || "No issue description provided."}
+                                </p>
                                 
-                                <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                                    {ticket.assigned_to_name && (
-                                        <div className="flex items-center gap-1 text-muted-foreground bg-muted/60 px-1 py-0.5 rounded border border-border/50 text-[9px] font-medium max-w-[65px] truncate">
-                                            <User className="w-2.5 h-2.5 opacity-70 flex-shrink-0" />
-                                            <span className="truncate leading-none">{ticket.assigned_to_name}</span>
+                                {(ticket.customer_name || ticket.customer_phone) && (
+                                    <div className="mt-1 flex items-center gap-1.5 text-[9px] sm:text-[11px] text-muted-foreground/90 truncate bg-muted/30 px-1.5 py-0.5 rounded w-fit max-w-full">
+                                        <User className="w-3 h-3 flex-shrink-0 opacity-50" />
+                                        <span className="truncate">{ticket.customer_name || "Unknown"}</span>
+                                        {ticket.customer_phone && (
+                                            <>
+                                                <span className="opacity-50">·</span>
+                                                <span className="font-mono truncate">{ticket.customer_phone}</span>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                            
+                            {/* Bottom row: Technician, Cost, SLA */}
+                            <div className="flex flex-wrap items-end justify-between gap-y-2 gap-x-4 w-full pt-2 border-t border-border/50">
+                                <div className="flex flex-col gap-1 sm:gap-1.5">
+                                    {ticket.assigned_to_name ? (
+                                        <div className="flex items-center gap-1 sm:gap-1.5 text-muted-foreground text-[9px] sm:text-[11px] font-medium max-w-[100px] sm:max-w-fit truncate">
+                                            <span className="opacity-60">Tech:</span>
+                                            <span className="truncate leading-none text-foreground/80">{ticket.assigned_to_name}</span>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-1 sm:gap-1.5 text-muted-foreground/60 text-[9px] sm:text-[11px] font-medium">
+                                            <span className="truncate leading-none italic">Unassigned</span>
                                         </div>
                                     )}
-                                    {(ticket.final_cost || ticket.estimated_cost) && (
-                                        <span className={`text-[10px] font-bold tracking-tight px-1 ${ticket.final_cost ? "text-success" : "text-foreground"}`}>
-                                            {ticket.final_cost ? `₹${ticket.final_cost}` : `~₹${ticket.estimated_cost}`}
-                                        </span>
-                                    )}
+
                                     {ticket.sla_deadline && (
-                                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded leading-none ${new Date(ticket.sla_deadline) < new Date() ? "text-danger bg-danger/10" : ticket.status === 'DELIVERED' ? "text-success bg-success/10" : "text-warning bg-warning/10"}`}>
-                                           {new Date(ticket.sla_deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric'})}
-                                        </span>
+                                        <div className={`flex items-center gap-1 sm:gap-1.5 text-[9px] sm:text-[11px] font-semibold leading-none
+                                            ${isOverdue ? "text-danger" : 
+                                            ticket.status === 'DELIVERED' ? "text-success" : 
+                                            "text-warning"}`}>
+                                            <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                                            <span className="hidden sm:inline">Due:</span> {new Date(ticket.sla_deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}, {new Date(ticket.sla_deadline).toLocaleDateString([], { month: 'short', day: 'numeric'})}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="flex items-center ml-auto shrink-0 pb-0.5">
+                                    {(ticket.final_cost || ticket.estimated_cost) ? (
+                                        <div className="flex flex-col items-end">
+                                            <span className="text-[8px] sm:text-[9px] text-muted-foreground font-semibold uppercase tracking-wider mb-0.5">
+                                                {ticket.final_cost ? "Final Price" : "Estimated"}
+                                            </span>
+                                            <span className={`text-sm sm:text-base font-black tracking-tight leading-none ${ticket.final_cost ? "text-success" : "text-foreground group-hover:text-primary transition-colors"}`}>
+                                                {currency}{ticket.final_cost || ticket.estimated_cost}
+                                            </span>
+                                        </div>
+                                    ) : (
+                                        <span className="text-[10px] sm:text-xs text-muted-foreground italic mb-0.5">No cost set</span>
                                     )}
                                 </div>
                             </div>
                         </Link>
-                    ))
+                    )})
                 )}
             </div>
 

@@ -5,6 +5,7 @@ import { Loader2, Plus, X, Search, PackageMinus } from "lucide-react";
 import { ticketsApi } from "@/lib/api/tickets";
 import { inventoryApi } from "@/lib/api/inventory";
 import type { TicketDetail, InventoryItem } from "@/types";
+import { useCurrency } from "@/store/shopStore";
 
 export function PartsSelector({
     ticket,
@@ -20,6 +21,7 @@ export function PartsSelector({
     const [removingPart, setRemovingPart] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [focus, setFocus] = useState(false);
+    const currency = useCurrency();
 
     useEffect(() => {
         if (!search.trim()) {
@@ -96,12 +98,12 @@ export function PartsSelector({
                             <div>
                                 <p className="text-sm text-foreground">{p.name}</p>
                                 <p className="text-xs text-muted-foreground">
-                                    {p.quantity} x ₹{p.cost}
+                                    {p.quantity} x {currency}{p.cost}
                                 </p>
                             </div>
                             <div className="flex items-center gap-3">
                                 <span className="text-sm font-medium text-foreground">
-                                    ₹{(p.quantity * parseFloat(p.cost || "0")).toFixed(2)}
+                                    {currency}{(p.quantity * parseFloat(p.cost || "0")).toFixed(2)}
                                 </span>
                                 <button
                                     onClick={() => handleRemove(p.id)}
@@ -153,7 +155,7 @@ export function PartsSelector({
                                         <p className="text-xs text-muted-foreground">In stock: {item.quantity}</p>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-sm font-medium text-foreground/90">₹{item.selling_price}</span>
+                                        <span className="text-sm font-medium text-foreground/90">{currency}{item.selling_price}</span>
                                         <Plus className="w-4 h-4 text-indigo-400" />
                                     </div>
                                 </button>

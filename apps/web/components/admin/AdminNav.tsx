@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
     LayoutDashboard, Store, LogOut, ShieldCheck, TrendingUp,
-    ClipboardList, Megaphone, Search, X, Loader2, CreditCard, Menu, Database
+    ClipboardList, Megaphone, Search, X, Loader2, CreditCard, Menu, Database, Server
 } from 'lucide-react';
 import { globalSearch, impersonateShop, adminLogout, type SearchResult } from '@/lib/admin-api';
 
@@ -14,7 +14,8 @@ const links = [
     { href: '/admin/plans',     label: 'Plans',      icon: CreditCard },
     { href: '/admin/audit-logs',label: 'Audit Log',  icon: ClipboardList },
     { href: '/admin/broadcast', label: 'Broadcast',  icon: Megaphone },
-    { href: process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '/docs') || 'http://localhost:8000/docs', label: 'API Viewer', icon: Database, external: true }
+    { href: '/admin/api-viewer', label: 'API Viewer', icon: Server },
+    { href: '/admin/db-viewer', label: 'DB Viewer', icon: Database },
 ];
 
 const TYPE_ICON: Record<string, string> = { shop: '🏪', user: '👤', ticket: '🎫' };
@@ -98,7 +99,7 @@ export default function AdminNav() {
     return (
         <>
             {/* ── DESKTOP sidebar (hidden on mobile) ───────────────────── */}
-            <aside className="admin-nav admin-nav--desktop">
+            <aside className="admin-nav admin-nav--desktop fixed z-50">
                 <div className="admin-nav__brand">
                     <ShieldCheck size={22} />
                     <span>RepairDesk<br /><small>Admin Panel</small></span>
@@ -124,16 +125,10 @@ export default function AdminNav() {
 
                 {/* Nav Links */}
                 <nav className="admin-nav__links">
-                    {links.map(({ href, label, icon: Icon, external }) => (
-                        external ? (
-                            <a key={href} href={href} className={`admin-nav__link`} target="_blank" rel="noopener noreferrer">
-                                <Icon size={18} />{label}
-                            </a>
-                        ) : (
-                            <Link key={href} href={href} className={`admin-nav__link${pathname.startsWith(href) ? ' active' : ''}`}>
-                                <Icon size={18} />{label}
-                            </Link>
-                        )
+                    {links.map(({ href, label, icon: Icon }) => (
+                        <Link key={href} href={href} className={`admin-nav__link${pathname.startsWith(href) ? ' active' : ''}`}>
+                            <Icon size={18} />{label}
+                        </Link>
                     ))}
                 </nav>
 
@@ -170,16 +165,10 @@ export default function AdminNav() {
             {mobileMenuOpen && (
                 <div className="admin-mobile-menu" onClick={() => setMobileMenuOpen(false)}>
                     <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '8px 12px' }}>
-                        {links.map(({ href, label, icon: Icon, external }) => (
-                            external ? (
-                                <a key={href} href={href} className={`admin-nav__link`} style={{ fontSize: 14 }} target="_blank" rel="noopener noreferrer">
-                                    <Icon size={17} />{label}
-                                </a>
-                            ) : (
-                                <Link key={href} href={href} className={`admin-nav__link${pathname.startsWith(href) ? ' active' : ''}`} style={{ fontSize: 14 }}>
-                                    <Icon size={17} />{label}
-                                </Link>
-                            )
+                        {links.map(({ href, label, icon: Icon }) => (
+                            <Link key={href} href={href} className={`admin-nav__link${pathname.startsWith(href) ? ' active' : ''}`} style={{ fontSize: 14 }}>
+                                <Icon size={17} />{label}
+                            </Link>
                         ))}
                     </nav>
                     <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', padding: '8px 12px' }}>
@@ -192,14 +181,9 @@ export default function AdminNav() {
 
             {/* ── MOBILE bottom tab bar ─────────────────────────────────── */}
             <nav className="admin-bottom-tabs">
-                {links.map(({ href, label, icon: Icon, external }) => {
-                    const active = !external && pathname.startsWith(href);
-                    return external ? (
-                        <a key={href} href={href} className={`admin-tab-item`} target="_blank" rel="noopener noreferrer">
-                            <Icon size={20} />
-                            <span>{label}</span>
-                        </a>
-                    ) : (
+                {links.map(({ href, label, icon: Icon }) => {
+                    const active = pathname.startsWith(href);
+                    return (
                         <Link key={href} href={href} className={`admin-tab-item${active ? ' active' : ''}`}>
                             <Icon size={20} />
                             <span>{label}</span>

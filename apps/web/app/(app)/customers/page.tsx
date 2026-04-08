@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Search, UserPlus, Users, Phone } from "lucide-react";
 import { customersApi } from "@/lib/api/tickets";
 import { InfiniteScrollObserver } from "@/components/InfiniteScrollObserver";
+import { useCurrency } from "@/store/shopStore";
 
 interface CustomerRow {
     id: string;
@@ -35,6 +36,7 @@ export default function CustomersPage() {
     const [search, setSearch] = useState("");
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
+    const currency = useCurrency();
 
     const load = useCallback(async () => {
         if (page === 1) setLoading(true);
@@ -106,7 +108,7 @@ export default function CustomersPage() {
                             {/* Revenue */}
                             <div className="text-right mr-4 hidden sm:block">
                                 <p className="text-success font-medium text-sm">
-                                    ₹{parseFloat(c.total_spent || "0").toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                                    {currency}{parseFloat(c.total_spent || "0").toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                                 </p>
                                 <p className="text-muted-foreground text-[10px] uppercase tracking-wider">Revenue</p>
                             </div>

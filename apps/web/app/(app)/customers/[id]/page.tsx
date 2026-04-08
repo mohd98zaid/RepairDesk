@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { customersApi } from "@/lib/api/tickets";
 import { StatusBadge } from "@/components/tickets/StatusBadge";
+import { useCurrency } from "@/store/shopStore";
 
 interface TicketSummary {
     id: string;
@@ -37,6 +38,7 @@ export default function CustomerDetailPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [activeTab, setActiveTab] = useState<"ALL" | "OPEN" | "IN_PROGRESS" | "READY" | "DELIVERED">("ALL");
+    const currency = useCurrency();
 
     // Edit modal state
     const [isEditing, setIsEditing] = useState(false);
@@ -182,7 +184,7 @@ export default function CustomerDetailPage() {
                     <div className="text-center">
                         <p className="text-muted-foreground text-xs mb-1">Total Revenue</p>
                         <p className="text-emerald-400 font-bold text-lg">
-                            ₹{totalSpent.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {currency}{totalSpent.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
                     </div>
                 </div>
@@ -252,7 +254,7 @@ export default function CustomerDetailPage() {
                             <StatusBadge status={t.status} />
                             {t.final_cost && (
                                 <span className="text-emerald-400 text-sm font-medium hidden sm:block">
-                                    ₹{parseFloat(t.final_cost).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                                    {currency}{parseFloat(t.final_cost).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                                 </span>
                             )}
                             <span className="text-muted-foreground text-xs hidden sm:block">

@@ -7,6 +7,7 @@ import { api } from "@/lib/api/client";
 import { QRScannerModal } from "@/components/QRScanner";
 import Link from "next/link";
 import { clsx } from "clsx";
+import { useCurrency } from "@/store/shopStore";
 
 interface SearchResult {
     tickets: any[];
@@ -22,6 +23,7 @@ export function GlobalSearch({ onSearch }: { onSearch?: () => void }) {
     const [isScannerOpen, setIsScannerOpen] = useState(false);
     const router = useRouter();
     const containerRef = useRef<HTMLDivElement>(null);
+    const currency = useCurrency();
 
     // Close when clicking outside
     useEffect(() => {
@@ -185,7 +187,7 @@ export function GlobalSearch({ onSearch }: { onSearch?: () => void }) {
                                             >
                                                 <div className="flex justify-between items-center mb-0.5">
                                                     <span className="text-sm font-medium text-foreground">{i.name}</span>
-                                                    <span className="text-xs font-medium text-foreground">₹{i.selling_price}</span>
+                                                    <span className="text-xs font-medium text-foreground">{currency}{i.selling_price}</span>
                                                 </div>
                                                 <div className="flex justify-between text-xs text-muted-foreground">
                                                     <span>{i.sku}</span>
