@@ -1,5 +1,17 @@
-import { redirect } from "next/navigation";
+import { Outfit } from "next/font/google";
+import Experience from "../components/landing/Experience";
+import { Navbar } from "../components/landing/Navbar";
 
-export default function RootPage() {
-  redirect("/dashboard");
+const outfit = Outfit({
+  subsets: ["latin"],
+  display: "swap",
+});
+
+export default function Home() {
+  return (
+    <main className={`bg-black ${outfit.className}`}>
+      <Navbar />
+      <Experience />
+    </main>
+  );
 }

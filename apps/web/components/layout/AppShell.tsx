@@ -281,7 +281,7 @@ function PWAInstallPrompt() {
         <div className="mx-1 mb-2 p-3 rounded-xl bg-primary/10 border border-primary/20 flex items-start gap-2">
             <Download className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-                <p className="text-primary text-xs font-semibold">Install RepairDesk</p>
+                <p className="text-primary text-xs font-semibold">Install RepairDeskz</p>
                 <p className="text-primary/80 text-xs mt-0.5">Works offline as an app</p>
                 <div className="flex gap-2 mt-2">
                     <button onClick={install} className="text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground font-medium">Install</button>
