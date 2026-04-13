@@ -604,7 +604,7 @@ export function LandingContent() {
             <span className="text-emerald-400">Fully digital.</span>
           </h2>
           <p className="text-slate-500 text-lg mb-10 max-w-xl mx-auto leading-relaxed">
-            Join 350+ repair shops already running on RepairDesk. Free forever to start — no card needed.
+            Join 350+ repair shops already running on RepairDeskz. Free forever to start — no card needed.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <a
@@ -627,8 +627,12 @@ export function LandingContent() {
       <footer className="border-t border-white/5">
         <div className="max-w-7xl mx-auto px-6 md:px-10 py-16 grid md:grid-cols-4 gap-10">
           <div className="md:col-span-1">
-            <div className="text-white font-extrabold text-xl tracking-tight mb-3">
-              Repair<span className="text-emerald-400">Desk</span>
+            <div className="mb-4">
+              <img 
+                src="/logo.png" 
+                alt="RepairDeskz" 
+                className="h-8 w-auto object-contain brightness-0 invert" 
+              />
             </div>
             <p className="text-slate-600 text-sm leading-relaxed">
               The digital operating system for independent repair professionals.
@@ -663,7 +667,7 @@ export function LandingContent() {
           ))}
         </div>
         <div className="border-t border-white/5 py-6 px-10 flex flex-col md:flex-row items-center justify-between gap-3">
-          <p className="text-slate-700 text-xs">© 2026 RepairDesk. All rights reserved.</p>
+          <p className="text-slate-700 text-xs">© 2026 RepairDeskz. All rights reserved.</p>
           <p className="text-slate-700 text-xs font-mono">v2.0 // Built for repair professionals</p>
         </div>
       </footer>

@@ -161,9 +161,13 @@ export function Overlay({ scrollProgress: p }: { scrollProgress: number }) {
       <Panel opacity={op[0]} side="left">
         <Glass className="w-full md:max-w-lg">
           <Tag>Digital OS for Repair Shops</Tag>
-          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black tracking-tight text-white leading-[1.0] mb-3">
-            Repair<span className="text-emerald-400">Deskz</span>
-          </h1>
+          <div className="mb-6">
+            <img 
+              src="/logo.png" 
+              alt="RepairDeskz" 
+              className="h-16 md:h-20 w-auto object-contain brightness-0 invert" 
+            />
+          </div>
           <p className="text-slate-400 text-sm md:text-base leading-relaxed mb-5 max-w-sm">
             The complete command centre for modern repair shops.{' '}
             <span className="text-white font-medium">Tickets, parts, customers — all in one place.</span>
