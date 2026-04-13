@@ -162,11 +162,9 @@ export function Overlay({ scrollProgress: p }: { scrollProgress: number }) {
         <Glass className="w-full md:max-w-lg">
           <Tag>Digital OS for Repair Shops</Tag>
           <div className="mb-6">
-            <img 
-              src="/logo.png" 
-              alt="RepairDeskz" 
-              className="h-20 md:h-24 w-auto object-contain" 
-            />
+            <div className="bg-white rounded-xl w-[200px] h-14 flex items-center justify-center overflow-hidden shadow-lg px-3 py-1">
+              <img src="/logo.png" alt="RepairDeskz" className="w-full h-auto object-contain scale-[1.15]" />
+            </div>
           </div>
           <p className="text-slate-400 text-sm md:text-base leading-relaxed mb-5 max-w-sm">
             The complete command centre for modern repair shops.{' '}
