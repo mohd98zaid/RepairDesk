@@ -259,7 +259,7 @@ export function Overlay({ scrollProgress: p }: { scrollProgress: number }) {
             {[
               { icon: '📥', text: 'Device received. Ticket #2847 open.' },
               { icon: '🔧', text: 'Repair started — est. 2 hours.' },
-              { icon: '✅', text: 'Ready for pickup! Total: £230.' },
+              { icon: '✅', text: 'Ready for pickup! Total: ₹230.' },
             ].map(({ icon, text }) => (
               <div key={icon}
                 className="flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-xs text-slate-300 leading-relaxed"
