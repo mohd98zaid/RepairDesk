@@ -71,11 +71,11 @@ type GLTFResult = GLTF & {
     Plastic_USB_port: THREE.MeshStandardMaterial
     material: THREE.MeshStandardMaterial
   }
-  animations: GLTFAction[]
+  // animations: any
 }
 
-export function Model(props: JSX.IntrinsicElements['group']) {
-  const { nodes, materials } = useGLTF('/model1.glb') as GLTFResult
+export function Model(props: any) {
+  const { nodes, materials } = useGLTF('/model1.glb') as any
   return (
     <group {...props} dispose={null}>
       <mesh geometry={nodes.Object_4.geometry} material={materials.Aluminum} />

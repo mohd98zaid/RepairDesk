@@ -71,11 +71,11 @@ type GLTFResult = GLTF & {
     Plastic_LED: THREE.MeshStandardMaterial
     Display: THREE.MeshStandardMaterial
   }
-  animations: GLTFAction[]
+  // animations: any
 }
 
-export function Model(props: JSX.IntrinsicElements['group']) {
-  const { nodes, materials } = useGLTF('/iphone_17_pro_max.glb') as GLTFResult
+export function Model(props: any) {
+  const { nodes, materials } = useGLTF('/iphone_17_pro_max.glb') as any
   return (
     <group {...props} dispose={null}>
       <group rotation={[-Math.PI / 2, 0, 0]}>

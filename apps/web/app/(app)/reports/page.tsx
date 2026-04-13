@@ -26,7 +26,7 @@ function StatCard({
     sub,
     colorClass,
 }: {
-    icon: React.ElementType;
+    icon: any;
     label: string;
     value: string;
     sub?: string;

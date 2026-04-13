@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.use({
-  camera: true,
+  permissions: ['camera'],
   launchOptions: {
     args: [
       '--use-fake-ui-for-media-stream',

@@ -65,7 +65,7 @@ function NavLink({
 }: {
     href: string;
     label: string;
-    icon: React.ElementType;
+    icon: any;
     onClick?: () => void;
     exact?: boolean;
 }) {
@@ -235,7 +235,7 @@ function NotificationsBell({
     );
 }
 
-function BottomNavItem({ href, label, icon: Icon }: { href: string; label: string; icon: React.ElementType }) {
+function BottomNavItem({ href, label, icon: Icon }: { href: string; label: string; icon: any }) {
     const pathname = usePathname();
     const isActive = pathname === href || pathname.startsWith(href + "/");
     return (

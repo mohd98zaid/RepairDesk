@@ -14,7 +14,7 @@ interface LogEntry {
     notes?: string;
 }
 
-const ENTITY_ICONS: Record<string, React.ElementType> = {
+const ENTITY_ICONS: Record<string, any> = {
     ticket: Ticket,
     customer: Users,
     inventory: Package,

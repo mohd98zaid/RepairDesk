@@ -30,7 +30,7 @@ function ImageUploadCircle({
 }: {
     current: string | null;
     label: string;
-    fallbackIcon: React.ElementType;
+    fallbackIcon: any;
     onChange: (base64: string) => void;
     size?: number;
 }) {
@@ -94,7 +94,7 @@ function ImageUploadCircle({
 function Field({
     label, icon: Icon, value, onChange, type = "text", placeholder, disabled,
 }: {
-    label: string; icon: React.ElementType; value: string; onChange: (v: string) => void;
+    label: string; icon: any; value: string; onChange: (v: string) => void;
     type?: string; placeholder?: string; disabled?: boolean;
 }) {
     return (
