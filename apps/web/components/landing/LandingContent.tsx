@@ -627,11 +627,11 @@ export function LandingContent() {
       <footer className="border-t border-white/5">
         <div className="max-w-7xl mx-auto px-6 md:px-10 py-16 grid md:grid-cols-4 gap-10">
           <div className="md:col-span-1">
-            <div className="mb-4">
+            <div className="mb-4 inline-flex bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-xl border border-white/10">
               <img 
                 src="/logo.png" 
                 alt="RepairDeskz" 
-                className="h-8 w-auto object-contain brightness-0 invert" 
+                className="h-7 w-auto object-contain" 
               />
             </div>
             <p className="text-slate-600 text-sm leading-relaxed">

@@ -161,11 +161,11 @@ export function Overlay({ scrollProgress: p }: { scrollProgress: number }) {
       <Panel opacity={op[0]} side="left">
         <Glass className="w-full md:max-w-lg">
           <Tag>Digital OS for Repair Shops</Tag>
-          <div className="mb-6">
+          <div className="mb-6 inline-flex bg-white/95 backdrop-blur-md px-6 py-3 rounded-2xl border border-white/20 shadow-2xl">
             <img 
               src="/logo.png" 
               alt="RepairDeskz" 
-              className="h-16 md:h-20 w-auto object-contain brightness-0 invert" 
+              className="h-14 md:h-16 w-auto object-contain" 
             />
           </div>
           <p className="text-slate-400 text-sm md:text-base leading-relaxed mb-5 max-w-sm">

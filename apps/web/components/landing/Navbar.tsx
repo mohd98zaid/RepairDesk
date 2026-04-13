@@ -29,11 +29,13 @@ export function Navbar() {
     >
       <div className="max-w-7xl mx-auto px-8 md:px-12 h-16 flex items-center justify-between">
         {/* Logo */}
-        <img 
-          src="/logo.png" 
-          alt="RepairDeskz" 
-          className="h-10 w-auto object-contain brightness-0 invert" 
-        />
+        <div className="bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 shadow-sm flex items-center justify-center h-10">
+          <img 
+            src="/logo.png" 
+            alt="RepairDeskz" 
+            className="h-full w-auto object-contain" 
+          />
+        </div>
 
         {/* CTAs */}
         <div className="flex items-center gap-3">
