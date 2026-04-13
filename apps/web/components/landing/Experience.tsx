@@ -3,24 +3,47 @@
 import { useRef, useEffect, useState } from 'react';
 import { Overlay } from './Overlay';
 
-// Lerp factor — tune here:
-//   0.06 = very cinematic / Apple-style slow
-//   0.08 = smooth & responsive  ← default
-//   0.12 = snappier
-const LERP = 0.08;
+// ── Performance constants ─────────────────────────────────────────────────
+// On desktop we can seek more often; on mobile each seek decodes a frame
+// from scratch — extremely expensive. Seek far less on mobile.
+const LERP_DESKTOP = 0.08;
+const LERP_MOBILE  = 0.05;
+
+// Minimum progress delta before we seek. Skipping sub-frame deltas avoids
+// redundant GPU decode work (key on mobile).
+// At 30fps over a 10s clip, one frame ≈ 0.0033 progress units.
+const MIN_SEEK_DELTA = 0.004;
+
+// ms of idle before we cancel the rAF loop entirely — zero GPU cost at rest.
+const IDLE_TIMEOUT_MS = 250;
+
+// Throttle React state updates to avoid layout thrash on every frame.
+const TEXT_DELTA_DESKTOP = 0.0005;
+const TEXT_DELTA_MOBILE  = 0.005;
 
 export default function Experience() {
-  const videoRef       = useRef<HTMLVideoElement>(null);
-  const targetRef      = useRef(0);   // raw scroll progress 0..1 (set on scroll)
-  const currentRef     = useRef(0);   // lerped progress (driven by rAF)
-  const videoReadyRef  = useRef(false);
+  const videoRef    = useRef<HTMLVideoElement>(null);
+  const targetRef   = useRef(0);        // raw scroll target 0-1
+  const currentRef  = useRef(0);        // lerped value
+  const videoReady  = useRef(false);
+  const rafId       = useRef<number | null>(null);
+  const idleTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSeekRef = useRef(-1);       // last value actually written to video
+  const lastTextRef = useRef(0);        // last value pushed to React state
+  const isMobile    = useRef(false);
+
   const [displayProgress, setDisplayProgress] = useState(0);
 
   useEffect(() => {
+    isMobile.current =
+      typeof window !== 'undefined' &&
+      /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
     const video = videoRef.current;
     if (!video) return;
 
-    let rafId: number;
+    const LERP = isMobile.current ? LERP_MOBILE : LERP_DESKTOP;
+    const TEXT_DELTA = isMobile.current ? TEXT_DELTA_MOBILE : TEXT_DELTA_DESKTOP;
 
     /* ── helpers ─────────────────────────────────────────── */
     const getScroll = (): number => {
@@ -29,63 +52,86 @@ export default function Experience() {
     };
 
     const applyTime = (progress: number) => {
-      if (!videoReadyRef.current) return;
+      if (!videoReady.current) return;
       const d = video.duration;
       if (!d || !isFinite(d)) return;
+      // Skip seek if delta is below one video frame — avoids redundant decoding
+      if (Math.abs(progress - lastSeekRef.current) < MIN_SEEK_DELTA) return;
       video.currentTime = progress * d;
+      lastSeekRef.current = progress;
     };
 
-    /* ── keep video paused at all times ─────────────────── */
+    /* ── keep video paused ───────────────────────────────── */
     const lockPaused = () => { if (!video.paused) video.pause(); };
     video.addEventListener('play',    lockPaused);
     video.addEventListener('playing', lockPaused);
 
-    /* ── on video ready: snap lerp to current scroll (no lag) */
+    /* ── video ready ────────────────────────────────────── */
     const onReady = () => {
       lockPaused();
-      if (!videoReadyRef.current) {
-        videoReadyRef.current = true;
-        const p = getScroll();
-        targetRef.current  = p;
-        currentRef.current = p; // snap — no lerp lag on first load
-        applyTime(p);
-      }
+      if (videoReady.current) return;
+      videoReady.current = true;
+      const p = getScroll();
+      targetRef.current = currentRef.current = lastSeekRef.current = p;
+      applyTime(p);
+      setDisplayProgress(p);
+      lastTextRef.current = p;
     };
     video.addEventListener('loadedmetadata', onReady);
     video.addEventListener('canplay',        onReady);
     if (video.readyState >= HTMLMediaElement.HAVE_METADATA) onReady();
 
-    /* ── scroll: ONLY update target, never touch video here ─
-       The rAF loop is the single driver of currentTime.
-       This prevents janky double-sets & race conditions.    */
-    const onScroll = () => { targetRef.current = getScroll(); };
-    window.addEventListener('scroll', onScroll, { passive: true });
-
-    /* ── rAF loop: one lerp → drives both video + text ──── */
+    /* ── rAF loop (only runs while scrolling) ───────────── */
     const loop = () => {
       const prev = currentRef.current;
       const next = prev + (targetRef.current - prev) * LERP;
       currentRef.current = next;
 
-      // Drive video
       applyTime(next);
 
-      // Drive text overlay (React state — slightly throttled for perf)
-      if (Math.abs(next - prev) > 0.0001) {
+      if (Math.abs(next - lastTextRef.current) > TEXT_DELTA) {
+        lastTextRef.current = next;
         setDisplayProgress(next);
       }
 
-      rafId = requestAnimationFrame(loop);
+      rafId.current = requestAnimationFrame(loop);
     };
-    rafId = requestAnimationFrame(loop);
+
+    const startLoop = () => {
+      if (rafId.current === null) {
+        rafId.current = requestAnimationFrame(loop);
+      }
+    };
+
+    const stopLoop = () => {
+      if (rafId.current !== null) {
+        cancelAnimationFrame(rafId.current);
+        rafId.current = null;
+      }
+    };
+
+    /* ── scroll handler ─────────────────────────────────── */
+    const onScroll = () => {
+      targetRef.current = getScroll();
+      startLoop();
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+      idleTimer.current = setTimeout(stopLoop, IDLE_TIMEOUT_MS);
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+
+    // Run one short loop on mount to render first frame, then stop
+    startLoop();
+    setTimeout(stopLoop, 600);
 
     return () => {
+      stopLoop();
+      if (idleTimer.current) clearTimeout(idleTimer.current);
       window.removeEventListener('scroll', onScroll);
       video.removeEventListener('play',           lockPaused);
       video.removeEventListener('playing',        lockPaused);
       video.removeEventListener('loadedmetadata', onReady);
       video.removeEventListener('canplay',        onReady);
-      cancelAnimationFrame(rafId);
     };
   }, []);
 
@@ -119,7 +165,9 @@ export default function Experience() {
             position: 'absolute', inset: 0,
             width: '100%', height: '100%',
             objectFit: 'cover', objectPosition: 'center',
-            willChange: 'contents',
+            // GPU compositing layer — avoids layout invalidation on seek
+            transform: 'translateZ(0)',
+            willChange: 'transform',
           }}
         />
 
