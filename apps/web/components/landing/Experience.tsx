@@ -7,20 +7,21 @@ import { Overlay } from './Overlay';
 
 gsap.registerPlugin(ScrollTrigger);
 
-// ── Tuning constants ──────────────────────────────────────────────────────
+// ── Mobile config ─────────────────────────────────────────────────────────
+// GSAP scrub value: higher = more smoothing lag (1.5 is cinematic on mobile)
 const SCRUB_DESKTOP = 1;
-const SCRUB_MOBILE  = 1.5;
+const SCRUB_MOBILE  = 1.8;
 
-// Only seek if progress changed by at least this much (≈1 video frame @ 30fps)
-const MIN_SEEK_DELTA = 0.003;
+// Minimum progress delta before seeking the video (avoids redundant decodes)
+const MIN_SEEK_DELTA = 0.004;
 
-// Only update React state when progress changes this much (avoid layout thrash)
-const TEXT_THRESH_DESKTOP = 0.001;
-const TEXT_THRESH_MOBILE  = 0.006;
+// Throttle React text-overlay updates to avoid layout thrash
+const TEXT_THRESHOLD_DESKTOP = 0.001;
+const TEXT_THRESHOLD_MOBILE  = 0.006;
 
 export default function Experience() {
   const videoRef    = useRef<HTMLVideoElement>(null);
-  const canvasRef   = useRef<HTMLCanvasElement>(null);
+  const proxyRef    = useRef({ progress: 0 });   // GSAP drives this object
   const videoReady  = useRef(false);
   const lastSeekRef = useRef(-1);
   const lastTextRef = useRef(0);
@@ -29,42 +30,22 @@ export default function Experience() {
   const [displayProgress, setDisplayProgress] = useState(0);
 
   useEffect(() => {
-    isMobile.current = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    isMobile.current =
+      /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-    const video  = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
+    const video = videoRef.current;
+    if (!video) return;
 
-    const SCRUB      = isMobile.current ? SCRUB_MOBILE  : SCRUB_DESKTOP;
-    const TEXT_THRESH = isMobile.current ? TEXT_THRESH_MOBILE : TEXT_THRESH_DESKTOP;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const SCRUB       = isMobile.current ? SCRUB_MOBILE  : SCRUB_DESKTOP;
+    const TEXT_THRESH = isMobile.current ? TEXT_THRESHOLD_MOBILE : TEXT_THRESHOLD_DESKTOP;
 
-    // ── Size canvas to fill viewport ────────────────────────────────────
-    const sizeCanvas = () => {
-      canvas.width  = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-    sizeCanvas();
-    window.addEventListener('resize', sizeCanvas, { passive: true });
-
-    // ── Keep video paused (it's only a decoder, never plays) ────────────
+    /* ── Keep video paused at all times ─────────────────────── */
     const lockPaused = () => { if (!video.paused) video.pause(); };
     video.addEventListener('play',    lockPaused);
     video.addEventListener('playing', lockPaused);
 
-    // ── Draw frame to canvas ONLY after the seek has decoded ────────────
-    // This is the core of the canvas technique: we don't display the video
-    // element at all. Instead we paint each decoded frame onto a canvas.
-    // The seeked event guarantees the frame is fully decoded before we draw —
-    // eliminating the "stale frame" flicker that causes visible jank.
-    const onSeeked = () => {
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    };
-    video.addEventListener('seeked', onSeeked);
-
-    // ── Seek function — skips seeks smaller than one video frame ─────────
-    const seek = (progress: number) => {
+    /* ── Apply seek — skip sub-frame deltas ─────────────────── */
+    const applyTime = (progress: number) => {
       if (!videoReady.current) return;
       const d = video.duration;
       if (!d || !isFinite(d)) return;
@@ -73,27 +54,14 @@ export default function Experience() {
       lastSeekRef.current = progress;
     };
 
-    // ── Video ready: snap to current scroll position ─────────────────────
-    const onReady = () => {
-      lockPaused();
-      if (videoReady.current) return;
-      videoReady.current = true;
-      const snap = ScrollTrigger.getAll()[0]?.progress ?? 0;
-      lastSeekRef.current = snap;
-      lastTextRef.current = snap;
-      video.currentTime = snap * (video.duration || 0);
-      setDisplayProgress(snap);
-    };
-    video.addEventListener('loadedmetadata', onReady);
-    video.addEventListener('canplay',        onReady);
-    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) onReady();
-
-    // ── GSAP ticker: reads lerped progress and triggers seeks ────────────
-    // GSAP's ticker is more precise than rAF and handles tab-visibility
-    // changes and missed frames gracefully.
+    /* ── GSAP ticker callback — called every GSAP frame ─────── */
+    // This runs on GSAP's optimised internal ticker, NOT rAF directly.
+    // It reads the proxy.progress that ScrollTrigger lerps automatically.
     const onTick = () => {
-      const p = ScrollTrigger.getAll()[0]?.progress ?? 0;
-      seek(p);
+      const p = proxyRef.current.progress;
+
+      applyTime(p);
+
       if (Math.abs(p - lastTextRef.current) > TEXT_THRESH) {
         lastTextRef.current = p;
         setDisplayProgress(p);
@@ -101,27 +69,43 @@ export default function Experience() {
     };
     gsap.ticker.add(onTick);
 
-    // ── ScrollTrigger lerps progress 0→1 via scrub ───────────────────────
-    // scrub: N means the animation catches up over N seconds — this is
-    // the built-in GSAP lerp. Higher values on mobile = more smoothing.
+    /* ── ScrollTrigger drives proxy.progress 0→1 ────────────── */
     const trigger = ScrollTrigger.create({
       trigger : document.body,
       start   : 'top top',
       end     : 'bottom bottom',
-      scrub   : SCRUB,
+      scrub   : SCRUB,          // GSAP's built-in lerp — much smoother on mobile
+      onUpdate: (self) => {
+        proxyRef.current.progress = self.progress;
+      },
     });
 
-    // normalizeScroll kills iOS rubber-band jank and Android overscroll jitter
+    /* ── normalizeScroll: tames iOS rubber-band & Android jank ─ */
+    // Must be called after ScrollTrigger.create()
     ScrollTrigger.normalizeScroll(true);
+
+    /* ── Video ready: snap to current scroll position ─────────  */
+    const onReady = () => {
+      lockPaused();
+      if (videoReady.current) return;
+      videoReady.current = true;
+      const p = ScrollTrigger.getAll()[0]?.progress ?? 0;
+      proxyRef.current.progress  = p;
+      lastSeekRef.current        = p;
+      lastTextRef.current        = p;
+      applyTime(p);
+      setDisplayProgress(p);
+    };
+    video.addEventListener('loadedmetadata', onReady);
+    video.addEventListener('canplay',        onReady);
+    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) onReady();
 
     return () => {
       gsap.ticker.remove(onTick);
       trigger.kill();
       ScrollTrigger.normalizeScroll(false);
-      window.removeEventListener('resize', sizeCanvas);
       video.removeEventListener('play',           lockPaused);
       video.removeEventListener('playing',        lockPaused);
-      video.removeEventListener('seeked',         onSeeked);
       video.removeEventListener('loadedmetadata', onReady);
       video.removeEventListener('canplay',        onReady);
     };
@@ -130,7 +114,7 @@ export default function Experience() {
   return (
     <div className="relative bg-black">
 
-      {/* ── Fixed Background ── */}
+      {/* ── Fixed Video Background ── */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
 
         {/* Radial vignette */}
@@ -145,27 +129,7 @@ export default function Experience() {
           style={{ height: '30%', background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.85))' }}
         />
 
-        {/*
-          ── Canvas: the visible display surface ──
-          Frames are painted here via ctx.drawImage() on every seeked event.
-          This is >2x faster than displaying a <video> element directly
-          on mobile, because the browser doesn't have to maintain a live
-          video compositing layer on the GPU.
-        */}
-        <canvas
-          ref={canvasRef}
-          style={{
-            position: 'absolute', inset: 0,
-            width: '100%', height: '100%',
-            display: 'block',
-          }}
-        />
-
-        {/*
-          ── Video: hidden decoder only ──
-          Never displayed; acts purely as a frame source for the canvas.
-          Hidden via display:none to prevent any compositing cost.
-        */}
+        {/* ── Disassembly video ── */}
         <video
           ref={videoRef}
           src="/disassembly.mp4"
@@ -173,7 +137,13 @@ export default function Experience() {
           playsInline
           preload="auto"
           disablePictureInPicture
-          style={{ display: 'none' }}
+          style={{
+            position: 'absolute', inset: 0,
+            width: '100%', height: '100%',
+            objectFit: 'cover', objectPosition: 'center',
+            transform: 'translateZ(0)',
+            willChange: 'transform',
+          }}
         />
 
         {/* Emerald accent bloom */}
