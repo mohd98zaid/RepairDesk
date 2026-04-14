@@ -1,5 +1,4 @@
 'use client';
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
 /* ─────────────────────────────────────────────────────────
@@ -71,32 +70,22 @@ const ScrollHint = ({ visible }: { visible: boolean }) => (
 );
 
 /* ─────────────────────────────────────────────────────────
-   Glass card
-   On mobile: no backdrop-blur (very expensive on mobile GPUs),
-   compensate with higher background opacity for readability.
-   On desktop: full blur for premium glassmorphism effect.
+   Glass card — dark backdrop for readability over video
 ───────────────────────────────────────────────────────── */
-function Glass({ children, className = '', lowPerf = false }: {
-  children: React.ReactNode;
-  className?: string;
-  lowPerf?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-2xl md:rounded-3xl px-5 py-5 md:px-8 md:py-7 ${className}`}
-      style={{
-        background: lowPerf ? 'rgba(2, 4, 10, 0.96)' : 'rgba(2, 4, 10, 0.88)',
-        backdropFilter: lowPerf ? 'none' : 'blur(28px) saturate(180%)',
-        WebkitBackdropFilter: lowPerf ? 'none' : 'blur(28px) saturate(180%)',
-        border: '1px solid rgba(255,255,255,0.09)',
-        boxShadow: '0 28px 60px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.04)',
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
+const Glass = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
+  <div
+    className={`rounded-2xl md:rounded-3xl px-5 py-5 md:px-8 md:py-7 ${className}`}
+    style={{
+      background: 'rgba(2, 4, 10, 0.88)',
+      backdropFilter: 'blur(28px) saturate(180%)',
+      WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+      border: '1px solid rgba(255,255,255,0.09)',
+      boxShadow: '0 28px 60px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.04)',
+    }}
+  >
+    {children}
+  </div>
+);
 
 /* ─────────────────────────────────────────────────────────
    Panel — fixed overlay
@@ -135,12 +124,6 @@ function Panel({
 export function Overlay({ scrollProgress: p }: { scrollProgress: number }) {
   const pct = Math.round(p * 100);
 
-  // Detect low-perf device on first render — disables backdrop-blur on mobile
-  const [lowPerf, setLowPerf] = useState(false);
-  useEffect(() => {
-    setLowPerf(/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
-  }, []);
-
   const op = [
     1 - range(p, 0, 0.12),   // 0 Hero
     bell(p, 0.08, 0.24),      // 1 Tickets    peak 20 %
@@ -174,10 +157,9 @@ export function Overlay({ scrollProgress: p }: { scrollProgress: number }) {
         </p>
       </div>
 
-
       {/* ══════════════════ 0 — HERO ══════════════════ */}
       <Panel opacity={op[0]} side="left">
-        <Glass className="w-full md:max-w-lg" lowPerf={lowPerf}>
+        <Glass className="w-full md:max-w-lg">
           <Tag>Digital OS for Repair Shops</Tag>
           <div className="mb-6">
             <div className="bg-white rounded-xl w-[200px] h-14 flex items-center justify-center overflow-hidden shadow-lg px-3 py-1">
@@ -211,7 +193,7 @@ export function Overlay({ scrollProgress: p }: { scrollProgress: number }) {
 
       {/* ══════════════════ 1 — TICKETS ══════════════════ */}
       <Panel opacity={op[1]} side="left">
-        <Glass className="w-full md:max-w-sm" lowPerf={lowPerf}>
+        <Glass className="w-full md:max-w-sm">
           <Tag>01 — Ticket Management</Tag>
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-white leading-[1.05] mb-3">
             Tickets in<br />
@@ -234,7 +216,7 @@ export function Overlay({ scrollProgress: p }: { scrollProgress: number }) {
 
       {/* ══════════════════ 2 — INVENTORY ══════════════════ */}
       <Panel opacity={op[2]} side="right">
-        <Glass className="w-full md:max-w-sm" lowPerf={lowPerf}>
+        <Glass className="w-full md:max-w-sm">
           <Tag>02 — Inventory</Tag>
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-white leading-[1.05] mb-3">
             Parts, always<br />
@@ -262,7 +244,7 @@ export function Overlay({ scrollProgress: p }: { scrollProgress: number }) {
 
       {/* ══════════════════ 3 — WHATSAPP ══════════════════ */}
       <Panel opacity={op[3]} side="left">
-        <Glass className="w-full md:max-w-sm" lowPerf={lowPerf}>
+        <Glass className="w-full md:max-w-sm">
           <Tag>03 — Customer Comms</Tag>
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-white leading-[1.05] mb-3">
             Customers stay<br />
@@ -292,7 +274,7 @@ export function Overlay({ scrollProgress: p }: { scrollProgress: number }) {
 
       {/* ══════════════════ 4 — AI & ANALYTICS ══════════════════ */}
       <Panel opacity={op[4]} side="right">
-        <Glass className="w-full md:max-w-sm" lowPerf={lowPerf}>
+        <Glass className="w-full md:max-w-sm">
           <Tag>04 — AI &amp; Insights</Tag>
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-white leading-[1.05] mb-3">
             Ask your shop<br />
@@ -322,7 +304,7 @@ export function Overlay({ scrollProgress: p }: { scrollProgress: number }) {
 
       {/* ══════════════════ 5 — START YOUR JOURNEY ══════════════════ */}
       <Panel opacity={op[5]} side="center">
-        <Glass className="w-full md:max-w-lg text-center" lowPerf={lowPerf}>
+        <Glass className="w-full md:max-w-lg text-center">
           <Tag>Ready?</Tag>
           <h2
             className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black tracking-tighter text-white leading-[1.0] mb-4"
