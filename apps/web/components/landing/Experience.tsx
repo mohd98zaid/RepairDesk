@@ -1,133 +1,109 @@
 'use client';
 
 import { useRef, useEffect, useState } from 'react';
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Overlay } from './Overlay';
 
-// ── Performance constants ─────────────────────────────────────────────────
-// On desktop we can seek more often; on mobile each seek decodes a frame
-// from scratch — extremely expensive. Seek far less on mobile.
-const LERP_DESKTOP = 0.08;
-const LERP_MOBILE  = 0.05;
+gsap.registerPlugin(ScrollTrigger);
 
-// Minimum progress delta before we seek. Skipping sub-frame deltas avoids
-// redundant GPU decode work (key on mobile).
-// At 30fps over a 10s clip, one frame ≈ 0.0033 progress units.
+// ── Mobile config ─────────────────────────────────────────────────────────
+// GSAP scrub value: higher = more smoothing lag (1.5 is cinematic on mobile)
+const SCRUB_DESKTOP = 1;
+const SCRUB_MOBILE  = 1.8;
+
+// Minimum progress delta before seeking the video (avoids redundant decodes)
 const MIN_SEEK_DELTA = 0.004;
 
-// ms of idle before we cancel the rAF loop entirely — zero GPU cost at rest.
-const IDLE_TIMEOUT_MS = 250;
-
-// Throttle React state updates to avoid layout thrash on every frame.
-const TEXT_DELTA_DESKTOP = 0.0005;
-const TEXT_DELTA_MOBILE  = 0.005;
+// Throttle React text-overlay updates to avoid layout thrash
+const TEXT_THRESHOLD_DESKTOP = 0.001;
+const TEXT_THRESHOLD_MOBILE  = 0.006;
 
 export default function Experience() {
   const videoRef    = useRef<HTMLVideoElement>(null);
-  const targetRef   = useRef(0);        // raw scroll target 0-1
-  const currentRef  = useRef(0);        // lerped value
+  const proxyRef    = useRef({ progress: 0 });   // GSAP drives this object
   const videoReady  = useRef(false);
-  const rafId       = useRef<number | null>(null);
-  const idleTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSeekRef = useRef(-1);       // last value actually written to video
-  const lastTextRef = useRef(0);        // last value pushed to React state
+  const lastSeekRef = useRef(-1);
+  const lastTextRef = useRef(0);
   const isMobile    = useRef(false);
 
   const [displayProgress, setDisplayProgress] = useState(0);
 
   useEffect(() => {
     isMobile.current =
-      typeof window !== 'undefined' &&
       /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
     const video = videoRef.current;
     if (!video) return;
 
-    const LERP = isMobile.current ? LERP_MOBILE : LERP_DESKTOP;
-    const TEXT_DELTA = isMobile.current ? TEXT_DELTA_MOBILE : TEXT_DELTA_DESKTOP;
+    const SCRUB       = isMobile.current ? SCRUB_MOBILE  : SCRUB_DESKTOP;
+    const TEXT_THRESH = isMobile.current ? TEXT_THRESHOLD_MOBILE : TEXT_THRESHOLD_DESKTOP;
 
-    /* ── helpers ─────────────────────────────────────────── */
-    const getScroll = (): number => {
-      const h = document.documentElement.scrollHeight - window.innerHeight;
-      return h > 0 ? Math.max(0, Math.min(1, window.scrollY / h)) : 0;
-    };
+    /* ── Keep video paused at all times ─────────────────────── */
+    const lockPaused = () => { if (!video.paused) video.pause(); };
+    video.addEventListener('play',    lockPaused);
+    video.addEventListener('playing', lockPaused);
 
+    /* ── Apply seek — skip sub-frame deltas ─────────────────── */
     const applyTime = (progress: number) => {
       if (!videoReady.current) return;
       const d = video.duration;
       if (!d || !isFinite(d)) return;
-      // Skip seek if delta is below one video frame — avoids redundant decoding
       if (Math.abs(progress - lastSeekRef.current) < MIN_SEEK_DELTA) return;
       video.currentTime = progress * d;
       lastSeekRef.current = progress;
     };
 
-    /* ── keep video paused ───────────────────────────────── */
-    const lockPaused = () => { if (!video.paused) video.pause(); };
-    video.addEventListener('play',    lockPaused);
-    video.addEventListener('playing', lockPaused);
+    /* ── GSAP ticker callback — called every GSAP frame ─────── */
+    // This runs on GSAP's optimised internal ticker, NOT rAF directly.
+    // It reads the proxy.progress that ScrollTrigger lerps automatically.
+    const onTick = () => {
+      const p = proxyRef.current.progress;
 
-    /* ── video ready ────────────────────────────────────── */
+      applyTime(p);
+
+      if (Math.abs(p - lastTextRef.current) > TEXT_THRESH) {
+        lastTextRef.current = p;
+        setDisplayProgress(p);
+      }
+    };
+    gsap.ticker.add(onTick);
+
+    /* ── ScrollTrigger drives proxy.progress 0→1 ────────────── */
+    const trigger = ScrollTrigger.create({
+      trigger : document.body,
+      start   : 'top top',
+      end     : 'bottom bottom',
+      scrub   : SCRUB,          // GSAP's built-in lerp — much smoother on mobile
+      onUpdate: (self) => {
+        proxyRef.current.progress = self.progress;
+      },
+    });
+
+    /* ── normalizeScroll: tames iOS rubber-band & Android jank ─ */
+    // Must be called after ScrollTrigger.create()
+    ScrollTrigger.normalizeScroll(true);
+
+    /* ── Video ready: snap to current scroll position ─────────  */
     const onReady = () => {
       lockPaused();
       if (videoReady.current) return;
       videoReady.current = true;
-      const p = getScroll();
-      targetRef.current = currentRef.current = lastSeekRef.current = p;
+      const p = ScrollTrigger.getAll()[0]?.progress ?? 0;
+      proxyRef.current.progress  = p;
+      lastSeekRef.current        = p;
+      lastTextRef.current        = p;
       applyTime(p);
       setDisplayProgress(p);
-      lastTextRef.current = p;
     };
     video.addEventListener('loadedmetadata', onReady);
     video.addEventListener('canplay',        onReady);
     if (video.readyState >= HTMLMediaElement.HAVE_METADATA) onReady();
 
-    /* ── rAF loop (only runs while scrolling) ───────────── */
-    const loop = () => {
-      const prev = currentRef.current;
-      const next = prev + (targetRef.current - prev) * LERP;
-      currentRef.current = next;
-
-      applyTime(next);
-
-      if (Math.abs(next - lastTextRef.current) > TEXT_DELTA) {
-        lastTextRef.current = next;
-        setDisplayProgress(next);
-      }
-
-      rafId.current = requestAnimationFrame(loop);
-    };
-
-    const startLoop = () => {
-      if (rafId.current === null) {
-        rafId.current = requestAnimationFrame(loop);
-      }
-    };
-
-    const stopLoop = () => {
-      if (rafId.current !== null) {
-        cancelAnimationFrame(rafId.current);
-        rafId.current = null;
-      }
-    };
-
-    /* ── scroll handler ─────────────────────────────────── */
-    const onScroll = () => {
-      targetRef.current = getScroll();
-      startLoop();
-      if (idleTimer.current) clearTimeout(idleTimer.current);
-      idleTimer.current = setTimeout(stopLoop, IDLE_TIMEOUT_MS);
-    };
-
-    window.addEventListener('scroll', onScroll, { passive: true });
-
-    // Run one short loop on mount to render first frame, then stop
-    startLoop();
-    setTimeout(stopLoop, 600);
-
     return () => {
-      stopLoop();
-      if (idleTimer.current) clearTimeout(idleTimer.current);
-      window.removeEventListener('scroll', onScroll);
+      gsap.ticker.remove(onTick);
+      trigger.kill();
+      ScrollTrigger.normalizeScroll(false);
       video.removeEventListener('play',           lockPaused);
       video.removeEventListener('playing',        lockPaused);
       video.removeEventListener('loadedmetadata', onReady);
@@ -165,7 +141,6 @@ export default function Experience() {
             position: 'absolute', inset: 0,
             width: '100%', height: '100%',
             objectFit: 'cover', objectPosition: 'center',
-            // GPU compositing layer — avoids layout invalidation on seek
             transform: 'translateZ(0)',
             willChange: 'transform',
           }}
