@@ -11,8 +11,10 @@ const LINKS = [
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
+  const [lowPerf, setLowPerf] = useState(false);
 
   useEffect(() => {
+    setLowPerf(/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
     const h = () => setScrolled(window.scrollY > 40);
     window.addEventListener('scroll', h, { passive: true });
     return () => window.removeEventListener('scroll', h);
@@ -22,8 +24,8 @@ export function Navbar() {
     <nav
       className="fixed top-0 left-0 right-0 z-50 transition-all duration-500"
       style={{
-        background: scrolled ? 'rgba(0,0,0,0.75)' : 'transparent',
-        backdropFilter: scrolled ? 'blur(20px)' : 'none',
+        background: scrolled ? (lowPerf ? 'rgba(0,0,0,0.95)' : 'rgba(0,0,0,0.75)') : 'transparent',
+        backdropFilter: scrolled && !lowPerf ? 'blur(20px)' : 'none',
         borderBottom: scrolled ? '1px solid rgba(255,255,255,0.05)' : 'none',
       }}
     >

@@ -8,9 +8,9 @@ import { Overlay } from './Overlay';
 gsap.registerPlugin(ScrollTrigger);
 
 // ── Mobile config ─────────────────────────────────────────────────────────
-// GSAP scrub value: higher = more smoothing lag (1.5 is cinematic on mobile)
-const SCRUB_DESKTOP = 1;
-const SCRUB_MOBILE  = 1.5;
+// GSAP scrub value: higher = more smoothing lag (1.5 is cinematic, 0.1 is instant 1:1)
+const SCRUB_DESKTOP = 0.5;
+const SCRUB_MOBILE  = 0.1;
 
 // Throttle React text-overlay updates to avoid layout thrash
 const TEXT_THRESHOLD_DESKTOP = 0.001;
