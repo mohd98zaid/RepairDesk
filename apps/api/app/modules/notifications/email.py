@@ -14,18 +14,26 @@ class EmailService:
             return False
 
         try:
+            sender = settings.smtp_user if (settings.smtp_user and "repairdesk.app" in settings.from_email) else settings.from_email
+
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
-            msg["From"] = settings.from_email
+            msg["From"] = sender
             msg["To"] = to_email
 
             part = MIMEText(html_content, "html")
             msg.attach(part)
 
-            with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as server:
-                server.starttls()
-                server.login(settings.smtp_user, settings.smtp_password)
-                server.sendmail(settings.from_email, to_email, msg.as_string())
+            port = int(settings.smtp_port or 587)
+            if port == 465:
+                with smtplib.SMTP_SSL(settings.smtp_host, port, timeout=10) as server:
+                    server.login(settings.smtp_user, settings.smtp_password)
+                    server.sendmail(sender, to_email, msg.as_string())
+            else:
+                with smtplib.SMTP(settings.smtp_host, port, timeout=10) as server:
+                    server.starttls()
+                    server.login(settings.smtp_user, settings.smtp_password)
+                    server.sendmail(sender, to_email, msg.as_string())
                 
             logger.info(f"Successfully sent email to {to_email}")
             return True
