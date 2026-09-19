@@ -13,7 +13,10 @@ class EmailService:
         if settings.resend_api_key:
             try:
                 import httpx
-                resend_sender = "RepairDesk <onboarding@resend.dev>" if "repairdesk.app" in settings.from_email else settings.from_email
+                # Resend requires onboarding@resend.dev unless a custom domain is verified
+                resend_sender = "RepairDesk <onboarding@resend.dev>"
+                if settings.from_email and not any(d in settings.from_email.lower() for d in ["repairdesk.app", "gmail.com", "yahoo.com", "hotmail.com", "outlook.com"]):
+                    resend_sender = settings.from_email
                 resp = httpx.post(
                     "https://api.resend.com/emails",
                     headers={
