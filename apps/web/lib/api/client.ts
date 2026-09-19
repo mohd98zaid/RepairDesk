@@ -23,12 +23,26 @@ function clearAuthAndRedirect(reason: 'session_ejected' | 'expired' = 'session_e
 export function getApiClient(): AxiosInstance {
     const client = axios.create({
         baseURL: API_URL,
-        withCredentials: true, // CRITICAL: send httpOnly auth cookies on every request
+        withCredentials: true, // Send httpOnly auth cookies when supported
         headers: { "Content-Type": "application/json" },
     });
 
-    // No Authorization header needed — cookies handle auth automatically
-    // via withCredentials: true
+    // Request interceptor: attach Bearer token from storage as fallback for cross-domain cookie restrictions
+    client.interceptors.request.use((config) => {
+        if (typeof window !== "undefined") {
+            try {
+                const raw = localStorage.getItem("repairdesk-auth");
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    const token = parsed?.state?.accessToken;
+                    if (token && !config.headers.Authorization) {
+                        config.headers.Authorization = `Bearer ${token}`;
+                    }
+                }
+            } catch { /* ignore */ }
+        }
+        return config;
+    });
 
     // Auto-refresh on 401
     client.interceptors.response.use(
@@ -41,31 +55,71 @@ export function getApiClient(): AxiosInstance {
                 if (!refreshing) {
                     refreshing = true;
                     try {
-                        // Refresh token is in httpOnly cookie — sent automatically
-                        await axios.post(
+                        let refreshToken: string | null = null;
+                        if (typeof window !== "undefined") {
+                            try {
+                                const raw = localStorage.getItem("repairdesk-auth");
+                                if (raw) {
+                                    refreshToken = JSON.parse(raw)?.state?.refreshToken || null;
+                                }
+                            } catch { /* ignore */ }
+                        }
+
+                        // Send refresh token in cookie AND in request body
+                        const refreshRes = await axios.post(
                             `${API_URL}/auth/refresh`,
-                            {},
+                            refreshToken ? { refresh_token: refreshToken } : {},
                             { withCredentials: true }
                         );
+
+                        const newAccess = refreshRes.data?.access_token;
+                        const newRefresh = refreshRes.data?.refresh_token;
+                        if (newAccess && typeof window !== "undefined") {
+                            try {
+                                const raw = localStorage.getItem("repairdesk-auth");
+                                const parsed = raw ? JSON.parse(raw) : { state: {} };
+                                parsed.state.accessToken = newAccess;
+                                if (newRefresh) parsed.state.refreshToken = newRefresh;
+                                localStorage.setItem("repairdesk-auth", JSON.stringify(parsed));
+                            } catch { /* ignore */ }
+                        }
 
                         onTokenRefreshed();
                         refreshing = false;
 
                         if (original) {
+                            if (newAccess && original.headers) {
+                                original.headers.Authorization = `Bearer ${newAccess}`;
+                            }
                             return client(original);
                         }
-                    } catch {
+                    } catch (refreshErr) {
                         refreshing = false;
                         refreshSubscribers = [];
                         clearAuthAndRedirect();
+                        return Promise.reject(refreshErr);
                     }
                 }
 
                 // Queue concurrent requests while refreshing
-                return new Promise((resolve) => {
+                return new Promise((resolve, reject) => {
                     refreshSubscribers.push(() => {
                         if (original) {
+                            let currentToken: string | null = null;
+                            if (typeof window !== "undefined") {
+                                try {
+                                    const raw = localStorage.getItem("repairdesk-auth");
+                                    if (raw) {
+                                        currentToken = JSON.parse(raw)?.state?.accessToken || null;
+                                    }
+                                } catch { /* ignore */ }
+                            }
+                            if (currentToken && original.headers) {
+                                original.headers.Authorization = `Bearer ${currentToken}`;
+                            }
                             resolve(client(original));
+                        } else {
+                            reject(error);
                         }
                     });
                 });

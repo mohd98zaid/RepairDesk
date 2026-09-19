@@ -137,34 +137,35 @@ export default function DashboardPage() {
             ]);
 
             // If the primary ticket/auth calls failed, surface the error
-            if (ticketRes.status === "rejected" || allTicketsRes.status === "rejected") {
+            // If both ticket calls failed (e.g. backend unreachable or unauthenticated), surface the error
+            if (ticketRes.status === "rejected" && allTicketsRes.status === "rejected") {
                 console.error("Critical dashboard data failed:", ticketRes, allTicketsRes);
                 setError(true);
                 return;
             }
 
-            const allItems = allTicketsRes.value.items ?? [];
+            const allItems = (allTicketsRes.status === "fulfilled" ? allTicketsRes.value?.items : (ticketRes.status === "fulfilled" ? ticketRes.value?.items : [])) ?? [];
             const open = allItems.filter((t: { status: string }) =>
                 ["RECEIVED", "IN_PROGRESS", "WAITING_PARTS"].includes(t.status)
             ).length;
             const ready = allItems.filter((t: { status: string }) => t.status === "READY").length;
             const resolved_today = deliveredTodayRes.status === "fulfilled"
-                ? deliveredTodayRes.value.items.length
+                ? (deliveredTodayRes.value?.items?.length ?? 0)
                 : 0;
 
             // Collect low stock items for detail panel
-            const allInvItems = invAllRes.status === "fulfilled" ? (invAllRes.value.items || []) : [];
+            const allInvItems = invAllRes.status === "fulfilled" ? (invAllRes.value?.items || []) : [];
             const lowItems: LowStockItem[] = allInvItems.filter(
                 (item: LowStockItem) => item.quantity <= (item.low_stock_threshold ?? 5)
             );
             setLowStockItems(lowItems.slice(0, 8));
 
             const lowStockCount = invRes.status === "fulfilled"
-                ? (invRes.value.low_stock_count ?? lowItems.length)
+                ? (invRes.value?.low_stock_count ?? invRes.value?.total ?? lowItems.length)
                 : lowItems.length;
 
             const totalRevenue = revenueRes.status === "fulfilled"
-                ? revenueRes.value.total_revenue
+                ? (revenueRes.value?.total_revenue ?? "0")
                 : "0";
 
             if (revenueRes.status === "rejected") {
@@ -196,7 +197,9 @@ export default function DashboardPage() {
                 low_stock: lowStockCount,
                 sla_rate,
             });
-            setRecentTickets(ticketRes.value.items.slice(0, 5));
+            
+            const recentList = (ticketRes.status === "fulfilled" ? ticketRes.value?.items : allItems) ?? [];
+            setRecentTickets(recentList.slice(0, 5));
         } catch (err) {
             console.error("Dashboard load failed:", err);
             setError(true);

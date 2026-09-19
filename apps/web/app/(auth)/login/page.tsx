@@ -81,8 +81,8 @@ export default function LoginPage() {
         setServerError(null);
         try {
             const res = await api.post("/auth/login", data);
-            const { user } = res.data;
-            setAuth(user as AuthUser);
+            const { user, access_token, refresh_token } = res.data;
+            setAuth(user as AuthUser, access_token, refresh_token);
             router.push("/dashboard");
         } catch (err: unknown) {
             const e = err as { response?: { status?: number; data?: { detail?: string } } };
@@ -127,8 +127,8 @@ export default function LoginPage() {
                 password: savedCreds.current.password,
                 otp: otp.trim(),
             });
-            const { user } = res.data;
-            setAuth(user as AuthUser);
+            const { user, access_token, refresh_token } = res.data;
+            setAuth(user as AuthUser, access_token, refresh_token);
             router.push("/dashboard");
         } catch (err: unknown) {
             const e = err as { response?: { status?: number; data?: { detail?: string } } };

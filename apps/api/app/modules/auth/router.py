@@ -11,6 +11,7 @@ from app.modules.activity.router import log_activity
 from app.modules.auth.schemas import (
     LoginRequest,
     RefreshResponse,
+    RefreshTokenRequest,
     RegisterRequest,
     TokenResponse,
     AuthUserPayload,
@@ -35,25 +36,22 @@ _COOKIE_SECURE = True
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
-    """Set both access and refresh tokens as httpOnly cookies."""
-    response.set_cookie(
-        key=ACCESS_COOKIE_NAME,
-        value=access_token,
-        httponly=True,
-        secure=_COOKIE_SECURE,
-        samesite="none" if _COOKIE_SECURE else "lax",
-        max_age=ACCESS_COOKIE_MAX_AGE,
-        path="/",
-    )
-    response.set_cookie(
-        key=REFRESH_COOKIE_NAME,
-        value=refresh_token,
-        httponly=True,
-        secure=_COOKIE_SECURE,
-        samesite="none" if _COOKIE_SECURE else "lax",
-        max_age=REFRESH_COOKIE_MAX_AGE,
-        path="/",
-    )
+    """Set both access and refresh tokens as httpOnly cookies with partitioned flag support."""
+    cookie_kwargs = {
+        "httponly": True,
+        "secure": _COOKIE_SECURE,
+        "samesite": "none" if _COOKIE_SECURE else "lax",
+        "path": "/",
+    }
+    try:
+        response.set_cookie(key=ACCESS_COOKIE_NAME, value=access_token, max_age=ACCESS_COOKIE_MAX_AGE, partitioned=True, **cookie_kwargs)
+    except TypeError:
+        response.set_cookie(key=ACCESS_COOKIE_NAME, value=access_token, max_age=ACCESS_COOKIE_MAX_AGE, **cookie_kwargs)
+
+    try:
+        response.set_cookie(key=REFRESH_COOKIE_NAME, value=refresh_token, max_age=REFRESH_COOKIE_MAX_AGE, partitioned=True, **cookie_kwargs)
+    except TypeError:
+        response.set_cookie(key=REFRESH_COOKIE_NAME, value=refresh_token, max_age=REFRESH_COOKIE_MAX_AGE, **cookie_kwargs)
 
 
 def _clear_auth_cookies(response: Response) -> None:
@@ -70,20 +68,22 @@ limiter = Limiter(key_func=get_remote_address)
 @router.post("/send-otp", status_code=202)
 @limiter.limit("5/minute")
 async def send_otp(request: Request, data: SendOtpRequest, db: DbSession):
-    """Send a 6-digit OTP to a valid Gmail address."""
-    await service.send_otp(data.email, db)
+    """Generate a 6-digit OTP for email verification and send it."""
+    from app.modules.notifications.service import send_registration_otp
+    otp = await service.create_registration_otp(data.email, db)
+    await send_registration_otp(data.email, otp)
     return {"message": "OTP sent successfully."}
 
 
-@router.post("/verify-otp", response_model=VerifyOtpResponse, status_code=200)
+@router.post("/verify-otp", status_code=200, response_model=VerifyOtpResponse)
 @limiter.limit("10/minute")
 async def verify_otp(request: Request, data: VerifyOtpRequest, db: DbSession):
-    """Verify the 6-digit OTP and return a verified_token."""
-    token = await service.verify_otp(data.email, data.otp, db)
+    """Verify the registration OTP. Returns a single-use verified_token."""
+    token = await service.verify_registration_otp(data.email, data.otp, db)
     return VerifyOtpResponse(verified_token=token)
 
 
-@router.post("/register", status_code=201)
+@router.post("/register", status_code=201, response_model=TokenResponse)
 @limiter.limit("5/minute")
 async def register(
     request: Request,
@@ -91,7 +91,7 @@ async def register(
     response: Response,
     db: DbSession,
 ):
-    """Register a new shop and owner account. Tokens set as httpOnly cookies."""
+    """Register a new shop and owner account. Returns tokens in JSON and sets cookies."""
     result = await service.register_shop(data, db)
     _set_auth_cookies(response, result["access_token"], result["refresh_token"])
 
@@ -104,10 +104,13 @@ async def register(
             role=str(user_obj.role.value) if hasattr(user_obj.role, "value") else str(user_obj.role),
             shop_id=user_obj.shop_id,
         ).model_dump(mode="json"),
+        "access_token": result["access_token"],
+        "refresh_token": result["refresh_token"],
+        "token_type": "bearer",
     }
 
 
-@router.post("/login", status_code=200)
+@router.post("/login", status_code=200, response_model=TokenResponse)
 @limiter.limit("10/minute")
 async def login(
     request: Request,
@@ -115,7 +118,7 @@ async def login(
     response: Response,
     db: DbSession,
 ):
-    """Authenticate with email + password. Tokens set as httpOnly cookies."""
+    """Authenticate with email + password. Returns tokens in JSON and sets cookies."""
     result = await service.login_user(data, db)
     _set_auth_cookies(response, result["access_token"], result["refresh_token"])
 
@@ -140,25 +143,35 @@ async def login(
             role=str(user_obj.role.value) if hasattr(user_obj.role, "value") else str(user_obj.role),
             shop_id=user_obj.shop_id,
         ).model_dump(mode="json"),
+        "access_token": result["access_token"],
+        "refresh_token": result["refresh_token"],
+        "token_type": "bearer",
     }
 
 
-@router.post("/refresh", status_code=200)
+@router.post("/refresh", status_code=200, response_model=RefreshResponse)
 @limiter.limit("30/minute")
 async def refresh(
     request: Request,
     response: Response,
     db: DbSession,
+    body: RefreshTokenRequest | None = None,
     repairdesk_refresh: str | None = Cookie(default=None),
 ):
-    """Exchange a valid refresh token for new access+refresh tokens. Reads from httpOnly cookie."""
-    if not repairdesk_refresh:
+    """Exchange a valid refresh token for new access+refresh tokens. Reads from httpOnly cookie or JSON body."""
+    token = repairdesk_refresh or (body.refresh_token if body else None)
+    if not token:
         raise UnauthorizedException("Refresh token not found.")
 
-    result = await service.refresh_access_token(repairdesk_refresh, db)
+    result = await service.refresh_access_token(token, db)
     _set_auth_cookies(response, result["access_token"], result["refresh_token"])
 
-    return {"ok": True}
+    return {
+        "ok": True,
+        "access_token": result["access_token"],
+        "refresh_token": result["refresh_token"],
+        "token_type": "bearer",
+    }
 
 
 @router.get("/session-status", status_code=200)
@@ -216,7 +229,7 @@ async def force_logout_otp(request: Request, data: ForceLogoutOtpRequest, db: Db
     return {"message": "If that email has an active account, an OTP has been sent."}
 
 
-@router.post("/force-logout-login", status_code=200)
+@router.post("/force-logout-login", status_code=200, response_model=TokenResponse)
 @limiter.limit("5/minute")
 async def force_logout_login(
     request: Request,
@@ -224,7 +237,7 @@ async def force_logout_login(
     response: Response,
     db: DbSession,
 ):
-    """Verify OTP, evict all other sessions, and issue a fresh session. Tokens as httpOnly cookies."""
+    """Verify OTP, evict all other sessions, and issue a fresh session. Tokens as httpOnly cookies and JSON."""
     result = await service.force_logout_others_and_login(data.email, data.otp, data.password, db)
     _set_auth_cookies(response, result["access_token"], result["refresh_token"])
 
@@ -249,6 +262,9 @@ async def force_logout_login(
             role=str(user_obj.role.value) if hasattr(user_obj.role, "value") else str(user_obj.role),
             shop_id=user_obj.shop_id,
         ).model_dump(mode="json"),
+        "access_token": result["access_token"],
+        "refresh_token": result["refresh_token"],
+        "token_type": "bearer",
     }
 
 

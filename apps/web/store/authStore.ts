@@ -4,9 +4,10 @@ import type { AuthUser } from "@/types";
 
 interface AuthState {
     user: AuthUser | null;
-    /** @deprecated Access token is now httpOnly cookie — never stored client-side */
     accessToken: string | null;
-    setAuth: (user: AuthUser) => void;
+    refreshToken: string | null;
+    setAuth: (user: AuthUser, accessToken?: string | null, refreshToken?: string | null) => void;
+    setTokens: (accessToken: string | null, refreshToken?: string | null) => void;
     setUser: (user: AuthUser) => void;
     clearAuth: () => void;
     isAuthenticated: () => boolean;
@@ -17,51 +18,45 @@ export const useAuthStore = create<AuthState>()(
         (set: any, get: any): AuthState => ({
             user: null,
             accessToken: null,
+            refreshToken: null,
 
-            setAuth: (user: AuthUser) =>
-                set({ user, accessToken: null }),
+            setAuth: (user: AuthUser, accessToken?: string | null, refreshToken?: string | null) =>
+                set({ user, accessToken: accessToken || null, refreshToken: refreshToken || null }),
+
+            setTokens: (accessToken: string | null, refreshToken?: string | null) =>
+                set((state: any) => ({
+                    accessToken,
+                    refreshToken: refreshToken !== undefined ? refreshToken : state.refreshToken,
+                })),
 
             setUser: (user: AuthUser) => set({ user }),
 
-            clearAuth: () => set({ user: null, accessToken: null }),
+            clearAuth: () => set({ user: null, accessToken: null, refreshToken: null }),
 
             isAuthenticated: () => !!get().user,
         }),
         {
             name: "repairdesk-auth",
             storage: createJSONStorage(() => localStorage),
-            version: 2,
+            version: 3,
             migrate: (persisted: unknown, version: number) => {
-                // v0/v1 had refreshToken and accessToken — strip them
                 const p = persisted as Record<string, unknown>;
-                if (version < 2 && p && typeof p === "object" && "state" in p) {
-                    const state = p.state as Record<string, unknown>;
-                    if (state) {
-                        delete state.refreshToken;
-                        delete state.accessToken;
-                    }
-                    // Ensure we return a proper AuthState object with all required fields
-                    return {
-                        ...state,
-                        setAuth: (user: AuthUser) => {},
-                        setUser: (user: AuthUser) => {},
-                        clearAuth: () => {},
-                        isAuthenticated: () => !!state.user,
-                    } as AuthState;
-                }
-                // Return default state if no migration needed
+                const state = (p && typeof p === "object" && "state" in p) ? (p.state as Record<string, unknown>) : (p || {});
                 return {
-                    user: null,
-                    accessToken: null,
-                    setAuth: (user: AuthUser) => {},
-                    setUser: (user: AuthUser) => {},
+                    user: (state?.user as AuthUser) || null,
+                    accessToken: (state?.accessToken as string) || null,
+                    refreshToken: (state?.refreshToken as string) || null,
+                    setAuth: () => {},
+                    setTokens: () => {},
+                    setUser: () => {},
                     clearAuth: () => {},
-                    isAuthenticated: () => false,
+                    isAuthenticated: () => !!state?.user,
                 } as AuthState;
             },
             partialize: (state: AuthState) => ({
                 user: state.user,
-                // NO tokens stored — access token is in httpOnly cookie only
+                accessToken: state.accessToken,
+                refreshToken: state.refreshToken,
             }) as AuthState,
             // Skip rehydration if localStorage data is corrupted
             onRehydrateStorage: () => {

@@ -77,8 +77,13 @@ class LoginRequest(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str | None = None
+    refresh_token: str | None = None
     token_type: str = "bearer"
     user: "AuthUserPayload"
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str | None = None
 
 
 class AuthUserPayload(BaseModel):
@@ -100,7 +105,9 @@ class AuthUserPayload(BaseModel):
 
 class RefreshResponse(BaseModel):
     access_token: str
+    refresh_token: str | None = None
     token_type: str = "bearer"
+    ok: bool = True
 
 
 class ForgotPasswordRequest(BaseModel):
