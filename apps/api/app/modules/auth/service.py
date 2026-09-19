@@ -414,12 +414,15 @@ async def send_force_logout_otp(email: str, db: AsyncSession) -> None:
     redis = await get_redis()
     await redis.setex(f"force_logout_otp:{email}", 60 * 10, otp)  # 10 minutes
 
+    print(f"🔑 [FORCE LOGOUT OTP] Code for {email}: {otp}", flush=True)
+
     html = (
         f"<p>Hello {user.full_name},</p>"
         f"<p>Someone is trying to <strong>force-logout all other devices</strong> on your RepairDesk account.</p>"
         f"<p>Your one-time code is: <strong style='font-size:24px;letter-spacing:4px'>{otp}</strong></p>"
         f"<p>This code expires in <strong>10 minutes</strong>. If this wasn't you, please secure your account immediately.</p>"
     )
+    from app.modules.notifications.email import EmailService
     await EmailService.send_email(email, "RepairDesk — Force Logout OTP", html)
 
 
