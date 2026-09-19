@@ -4,14 +4,13 @@ import logging
 import secrets
 import uuid
 from typing import AsyncGenerator
-from fastapi import APIRouter, Cookie, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from jose import JWTError
 from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.db import AsyncSessionLocal
-from app.core.security import decode_token
+from app.core.dependencies import CurrentUser
 from app.core.redis import get_redis
 from app.modules.inventory.models import InventoryItem
 from app.modules.tickets.models import Ticket
@@ -26,44 +25,25 @@ logger = logging.getLogger(__name__)
 
 @router.post("/sse-token", status_code=200)
 async def create_sse_token(
-    request: Request,
-    repairdesk_access: str | None = Cookie(default=None),
+    current_user: CurrentUser,
 ):
     """
     Issue a short-lived (60s) single-use SSE token.
-    The client fetches this via normal authenticated API call (Cookie),
+    The client fetches this via normal authenticated API call (Cookie or Bearer),
     then opens EventSource with ?sse_token=... instead of ?token=<JWT>.
 
     This prevents the access JWT from appearing in server logs, browser history,
     and Referer headers.
     """
-    authorization = request.headers.get("Authorization")
-    token = None
-    if repairdesk_access:
-        token = repairdesk_access
-    elif authorization and authorization.startswith("Bearer "):
-        token = authorization.split(" ", 1)[1]
-
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing authentication token.")
-
-    try:
-        payload = decode_token(token)
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token.")
-    if payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Invalid token type.")
-
-    user_id = payload.get("sub")
-    shop_id = payload.get("shop_id")
-    if not user_id or not shop_id:
-        raise HTTPException(status_code=401, detail="Token payload is incomplete.")
-
     # Generate a short-lived SSE token
     sse_token = secrets.token_urlsafe(32)
     redis = await get_redis()
     # Store shop_id + user_id for 60 seconds — single use
-    await redis.setex(f"sse:{sse_token}", 60, json.dumps({"user_id": user_id, "shop_id": shop_id}))
+    await redis.setex(
+        f"sse:{sse_token}",
+        60,
+        json.dumps({"user_id": str(current_user["user_id"]), "shop_id": str(current_user["shop_id"])}),
+    )
 
     return {"sse_token": sse_token}
 

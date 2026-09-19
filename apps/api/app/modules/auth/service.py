@@ -42,10 +42,7 @@ async def send_otp(email: str, db: AsyncSession) -> None:
 
     import logging
     _auth_logger = logging.getLogger("repairdesk.auth")
-    _auth_logger.info(f"🔑 [REGISTRATION OTP] Code for {email}: {otp}")
-    print(f"\n==================================================", flush=True)
-    print(f"🔑 [REGISTRATION OTP] Code for {email}: {otp}", flush=True)
-    print(f"==================================================\n", flush=True)
+    _auth_logger.info(f"Registration OTP generated for {email}")
 
     html = f"<p>Your RepairDesk verification code is: <strong>{otp}</strong></p><p>This code expires in 10 minutes.</p>"
     await EmailService.send_email(email, "RepairDesk Registration OTP", html)
@@ -413,8 +410,6 @@ async def send_force_logout_otp(email: str, db: AsyncSession) -> None:
     otp = f"{secrets.randbelow(1_000_000):06d}"
     redis = await get_redis()
     await redis.setex(f"force_logout_otp:{email}", 60 * 10, otp)  # 10 minutes
-
-    print(f"🔑 [FORCE LOGOUT OTP] Code for {email}: {otp}", flush=True)
 
     html = (
         f"<p>Hello {user.full_name},</p>"

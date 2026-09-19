@@ -380,6 +380,8 @@ async def submit_ticket_rating(request: Request, ticket_id: uuid.UUID, data: Rat
     ticket = result.scalar_one_or_none()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    if ticket.customer_rating is not None:
+        raise HTTPException(status_code=409, detail="Feedback has already been submitted for this ticket.")
     ticket.customer_rating = data.rating
     ticket.customer_feedback = data.feedback
     await db.commit()

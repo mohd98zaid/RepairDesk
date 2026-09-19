@@ -99,7 +99,7 @@ async def update_customer(
 @router.delete("/{customer_id}", status_code=204)
 async def delete_customer(
     customer_id: uuid.UUID,
-    current_user: CurrentUser,
+    current_user: OwnerUser,
     db: DbSession,
 ):
     """Soft-delete a customer."""

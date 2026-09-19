@@ -385,11 +385,11 @@ async def create_purchase_order(
 
     # --- Pre-flight: friendly errors before hitting DB constraints ---
     vendor_check = await db.execute(
-        select(Vendor).where(Vendor.shop_id == shop_id).limit(1)
+        select(Vendor).where(Vendor.id == data.vendor_id, Vendor.shop_id == shop_id)
     )
     if not vendor_check.scalar_one_or_none():
         raise ValidationException(
-            "No vendors found. Please add a vendor first before creating a Purchase Order."
+            "Selected vendor was not found in your shop. Please select a valid vendor."
         )
 
     if not data.items:

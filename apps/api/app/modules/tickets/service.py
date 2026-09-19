@@ -91,6 +91,14 @@ async def create_ticket(
 
     ticket_number = await _next_ticket_number(shop_id, db)
 
+    # Validate assigned_to belongs to this shop
+    if data.assigned_to:
+        assigned_user_check = await db.execute(
+            select(User).where(User.id == data.assigned_to, User.shop_id == shop_id, User.is_active == True)
+        )
+        if not assigned_user_check.scalar_one_or_none():
+            raise ValidationException("Assigned user does not belong to this shop.")
+
     ticket = Ticket(
         shop_id=shop_id,
         customer_id=customer.id,
@@ -121,8 +129,11 @@ async def create_ticket(
     )
     db.add(log)
 
-    # Register any pre-uploaded images
+    # Register any pre-uploaded images — strictly validate tenant prefix
+    expected_shop_prefix = f"{shop_id}/tickets/"
     for key in data.image_keys:
+        if not key.startswith(expected_shop_prefix) or ".." in key:
+            raise ValidationException(f"Invalid image key '{key}' for this shop.")
         img = TicketImage(
             ticket_id=ticket.id,
             minio_key=key,
@@ -215,6 +226,14 @@ async def update_ticket(
     ALLOWED_FIELDS = {"device_model", "technician_notes", "estimated_cost", "final_cost", "assigned_to", "pre_repair_checklist", "customer_signature", "warranty_days", "sla_deadline", "sla_hours"}
     for field, value in data.model_dump(exclude_none=True).items():
         if field not in ALLOWED_FIELDS:
+            continue
+        if field == "assigned_to" and value is not None:
+            assigned_user_check = await db.execute(
+                select(User).where(User.id == value, User.shop_id == shop_id, User.is_active == True)
+            )
+            if not assigned_user_check.scalar_one_or_none():
+                raise ValidationException("Assigned user does not belong to this shop.")
+            ticket.assigned_to = value
             continue
         if field == "sla_hours":
             ticket.sla_deadline = datetime.now(timezone.utc) + timedelta(hours=value)
@@ -449,6 +468,9 @@ async def confirm_image_upload(
     db: AsyncSession,
 ) -> TicketImage:
     await get_ticket(shop_id, ticket_id, db)
+    expected_prefix = f"{shop_id}/tickets/{ticket_id}/"
+    if not data.object_key.startswith(expected_prefix) or ".." in data.object_key:
+        raise ValidationException("Invalid object key for this ticket.")
     img = TicketImage(
         ticket_id=ticket_id,
         minio_key=data.object_key,

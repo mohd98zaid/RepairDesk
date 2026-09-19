@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.db import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import OwnerUser
 from app.modules.users.models import User
 from app.modules.activity.models import ActivityLog
 from app.modules.activity.schemas import ActivityLogResponse, ActivityLogListResponse
@@ -23,7 +23,7 @@ async def list_activity_logs(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: OwnerUser = None,
 ):
     """
     List activity logs for the current shop.
