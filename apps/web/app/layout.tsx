@@ -61,7 +61,7 @@ export default function RootLayout({
         <meta name="msapplication-TileImage" content="/icons/icon-192.png" />
       </head>
       <body className="min-h-screen bg-background font-sans antialiased" suppressHydrationWarning>
-        <PWARegister />
+        {/* <PWARegister /> */}
         {children}
       </body>
     </html>

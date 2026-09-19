@@ -4,6 +4,8 @@ import { useRef, useEffect, useState } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Overlay } from './Overlay';
+import dynamic from 'next/dynamic';
+const Desktop3DSceneNoSSR = dynamic(() => import('./Desktop3DScene'), { ssr: false });
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -26,97 +28,119 @@ export default function Experience() {
   const lastTextRef = useRef(0);
   const isMobile    = useRef(false);
   const imagesRef   = useRef<HTMLImageElement[]>([]); // preloaded frames array
-
+  
   const [displayProgress, setDisplayProgress] = useState(0);
+  const [isClientMode, setIsClientMode] = useState(false);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  const isMounted = useRef(false);
 
   useEffect(() => {
-    isMobile.current =
-      typeof window !== 'undefined' &&
-      /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    isMounted.current = true;
+    const mobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    isMobile.current = mobile;
+    setIsMobileDevice(mobile);
+    setIsClientMode(true);
 
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const SCRUB       = mobile ? SCRUB_MOBILE  : SCRUB_DESKTOP;
+    const TEXT_THRESH = mobile ? TEXT_THRESHOLD_MOBILE : TEXT_THRESHOLD_DESKTOP;
 
-    const SCRUB       = isMobile.current ? SCRUB_MOBILE  : SCRUB_DESKTOP;
-    const TEXT_THRESH = isMobile.current ? TEXT_THRESHOLD_MOBILE : TEXT_THRESHOLD_DESKTOP;
-
-    // ── Preload Images ──────────────────────────────────────────────────
-    // Load all 181 WebP frames into memory. Total size ~ 1.9MB.
-    // They will be drawn instantly to the canvas.
-    const images: HTMLImageElement[] = [];
-    for (let i = 1; i <= FRAME_COUNT; i++) {
-        const img = new window.Image();
-        // Zero-pad to 3 digits (e.g. 001, 012, 181)
-        const frameNum = i.toString().padStart(3, '0');
-        img.src = `/frames/frame_${frameNum}.webp`;
-        images.push(img);
-    }
-    imagesRef.current = images;
-
-    // ── Draw Function ───────────────────────────────────────────────────
-    const drawFrame = (index: number) => {
-        if (index < 0 || index >= FRAME_COUNT) return;
-        const img = imagesRef.current[index];
+    // ── Prepare Canvas ONLY if Mobile ───────────────────────────────────
+    let sizeCanvas = () => {};
+    if (mobile && canvasRef.current) {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
         
-        // Ensure image is fully loaded and has valid dimensions before drawing
-        if (img && img.complete && img.naturalWidth !== 0) {
-            // Replicate CSS object-fit: cover
-            const canvasRatio = canvas.width / canvas.height;
-            const imgRatio = img.naturalWidth / img.naturalHeight;
-            
-            let renderWidth = canvas.width;
-            let renderHeight = canvas.height;
-            let renderX = 0;
-            let renderY = 0;
-            
-            if (canvasRatio > imgRatio) {
-                // Canvas is wider than image (landscape)
-                renderHeight = canvas.width / imgRatio;
-                renderY = (canvas.height - renderHeight) / 2;
-            } else {
-                // Canvas is taller than image (portrait, i.e. mobile)
-                renderWidth = canvas.height * imgRatio;
-                renderX = (canvas.width - renderWidth) / 2;
+        if (ctx) {
+            // Load frames
+            const images: HTMLImageElement[] = [];
+            for (let i = 1; i <= FRAME_COUNT; i++) {
+                const img = new window.Image();
+                const frameNum = i.toString().padStart(3, '0');
+                img.src = `/frames/frame_${frameNum}.webp`;
+                images.push(img);
             }
+            imagesRef.current = images;
 
-            // Clear previous and draw next
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, renderX, renderY, renderWidth, renderHeight);
-            lastFrameRef.current = index;
+            const drawFrame = (index: number) => {
+                if (!isMounted.current) return;
+                if (index < 0 || index >= FRAME_COUNT) return;
+                const img = imagesRef.current[index];
+                
+                if (img && img.complete && img.naturalWidth !== 0) {
+                    const canvasRatio = canvas.width / canvas.height;
+                    const imgRatio = img.naturalWidth / img.naturalHeight;
+                    
+                    let renderWidth = canvas.width;
+                    let renderHeight = canvas.height;
+                    let renderX = 0;
+                    let renderY = 0;
+                    
+                    if (canvasRatio > imgRatio) {
+                        renderHeight = canvas.width / imgRatio;
+                        renderY = (canvas.height - renderHeight) / 2;
+                    } else {
+                        renderWidth = canvas.height * imgRatio;
+                        renderX = (canvas.width - renderWidth) / 2;
+                    }
+
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, renderX, renderY, renderWidth, renderHeight);
+                    lastFrameRef.current = index;
+                }
+            };
+
+            sizeCanvas = () => {
+              if (!isMounted.current) return;
+              canvas.width = window.innerWidth;
+              canvas.height = window.innerHeight;
+              if (lastFrameRef.current !== -1) {
+                drawFrame(lastFrameRef.current);
+              }
+            };
+            sizeCanvas();
+            window.addEventListener('resize', sizeCanvas, { passive: true });
+
+            if (images[0].complete) {
+                drawFrame(0);
+            } else {
+                images[0].addEventListener('load', () => drawFrame(0), { once: true });
+            }
         }
-    };
-
-    // ── Size canvas to fill viewport ────────────────────────────────────
-    const sizeCanvas = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      // Repaint current frame at new size
-      if (lastFrameRef.current !== -1) {
-        drawFrame(lastFrameRef.current);
-      }
-    };
-    sizeCanvas();
-    window.addEventListener('resize', sizeCanvas, { passive: true });
-
-    // Ensure First Frame is drawn
-    if (images[0].complete) {
-        drawFrame(0);
-    } else {
-        images[0].addEventListener('load', () => drawFrame(0), { once: true });
     }
 
     // ── GSAP ticker callback ───────────────────────────────────────────
     const onTick = () => {
+      if (!isMounted.current) return;
       const p = proxyRef.current.progress;
 
-      // Map progress (0 to 1) to frame index (0 to 180)
-      const targetFrameIndex = Math.round(p * (FRAME_COUNT - 1));
-
-      // Draw if progress moved to a new frame
-      if (targetFrameIndex !== lastFrameRef.current) {
-          drawFrame(targetFrameIndex);
+      if (isMobile.current) {
+          const targetFrameIndex = Math.round(p * (FRAME_COUNT - 1));
+          if (targetFrameIndex !== lastFrameRef.current && imagesRef.current[targetFrameIndex]) {
+              const index = targetFrameIndex;
+              const canvas = canvasRef.current;
+              const img = imagesRef.current[index];
+              if (canvas && img && img.complete && img.naturalWidth !== 0) {
+                  const ctx = canvas.getContext('2d');
+                  if (ctx) {
+                      const canvasRatio = canvas.width / canvas.height;
+                      const imgRatio = img.naturalWidth / img.naturalHeight;
+                      let renderWidth = canvas.width;
+                      let renderHeight = canvas.height;
+                      let renderX = 0;
+                      let renderY = 0;
+                      if (canvasRatio > imgRatio) {
+                          renderHeight = canvas.width / imgRatio;
+                          renderY = (canvas.height - renderHeight) / 2;
+                      } else {
+                          renderWidth = canvas.height * imgRatio;
+                          renderX = (canvas.width - renderWidth) / 2;
+                      }
+                      ctx.clearRect(0, 0, canvas.width, canvas.height);
+                      ctx.drawImage(img, renderX, renderY, renderWidth, renderHeight);
+                      lastFrameRef.current = index;
+                  }
+              }
+          }
       }
 
       // Throttle text overlay updates
@@ -134,25 +158,31 @@ export default function Experience() {
       end     : 'bottom bottom',
       scrub   : SCRUB,
       onUpdate: (self) => {
+        if (!isMounted.current) return;
         proxyRef.current.progress = self.progress;
       },
     });
 
-    // normalizeScroll kills iOS rubber-band jank and Android overscroll jitter
-    ScrollTrigger.normalizeScroll(true);
+    // Only normalize on mobile/touch devices
+    if (mobile) {
+      ScrollTrigger.normalizeScroll(true);
+    }
 
-    // Initial state sync (handles page restores midway down)
     const initialProgress = ScrollTrigger.getAll()[0]?.progress ?? 0;
     proxyRef.current.progress = initialProgress;
     setDisplayProgress(initialProgress);
 
-    return () => {
-      gsap.ticker.remove(onTick);
-      trigger.kill();
-      ScrollTrigger.normalizeScroll(false);
-      window.removeEventListener('resize', sizeCanvas);
-    };
+     return () => {
+       isMounted.current = false;
+       gsap.ticker.remove(onTick);
+       trigger.kill();
+       ScrollTrigger.normalizeScroll(false);
+       if (isMobile.current && typeof sizeCanvas === 'function') {
+           window.removeEventListener('resize', sizeCanvas);
+       }
+     };
   }, []);
+
 
   return (
     <div className="relative bg-black">
@@ -172,13 +202,17 @@ export default function Experience() {
           style={{ height: '30%', background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.85))' }}
         />
 
-        {/* ── Framewise Image Sequence Canvas ── */}
+        {/* ── Desktop R3F 3D Scene ── */}
+      {/* Client-side 3D scene to avoid hydration mismatch */}
+      <Desktop3DSceneNoSSR proxyRef={proxyRef} />
+
+        {/* ── Framewise Image Sequence Canvas (Mobile) ── */}
         <canvas
           ref={canvasRef}
           style={{
             position: 'absolute', inset: 0,
             width: '100%', height: '100%',
-            display: 'block',
+            display: isClientMode && isMobileDevice ? 'block' : 'none',
           }}
         />
 

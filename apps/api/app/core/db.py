@@ -16,11 +16,16 @@ if not _db_url:
         "====================================================================\n"
     )
 
+_connect_args = {}
+if ":6543" in _db_url or "pooler.supabase.com" in _db_url:
+    _connect_args["statement_cache_size"] = 0
+
 _engine_kwargs = {
     "echo": settings.environment == "development",
     "pool_pre_ping": True,
     "pool_size": 10,
     "max_overflow": 20,
+    "connect_args": _connect_args,
 }
 
 engine = create_async_engine(_db_url, **_engine_kwargs)

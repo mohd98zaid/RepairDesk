@@ -117,3 +117,8 @@ Digital_Repair_Ticket_Management_App_Documentation.pdf
 apps/web/test-results/
 apps/web/test_qr.png
 apps/web/test_camera.mjs
+
+# AI / Notes
+memory.md
+.agent/
+

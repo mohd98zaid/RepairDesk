@@ -15,10 +15,11 @@
         "test:ci": "npm run test:api:breaking && npm run test:api:security && npm run test:web"
     },
     "dependencies": {
+        "framer-motion": "^12.38.0",
         "react": "19.2.3",
         "react-dom": "19.2.3"
     },
     "devDependencies": {
-        "next": "15.1.6"
+        "next": "^15.5.15"
     }
 }
