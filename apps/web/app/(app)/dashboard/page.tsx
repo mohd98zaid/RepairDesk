@@ -212,12 +212,23 @@ export default function DashboardPage() {
     if (error) return (
         <div className="p-6 flex flex-col items-center justify-center min-h-64 gap-4">
             <p className="text-muted-foreground text-sm">Could not load dashboard data.</p>
-            <button
-                onClick={loadData}
-                className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm hover:opacity-90 transition"
-            >
-                Retry
-            </button>
+            <div className="flex items-center gap-3">
+                <button
+                    onClick={loadData}
+                    className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm hover:opacity-90 transition"
+                >
+                    Retry
+                </button>
+                <button
+                    onClick={() => {
+                        useAuthStore.getState().clearAuth();
+                        window.location.href = "/login";
+                    }}
+                    className="px-4 py-2 rounded-lg bg-muted text-foreground border border-border text-sm hover:bg-muted/80 transition"
+                >
+                    Re-login
+                </button>
+            </div>
         </div>
     );
 

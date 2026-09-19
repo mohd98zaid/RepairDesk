@@ -622,7 +622,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }
         try {
             const { state } = JSON.parse(authRaw);
-            if (!state?.user) {
+            if (!state?.user || !state?.accessToken) {
                 localStorage.removeItem("repairdesk-auth");
                 router.replace("/login");
             }
