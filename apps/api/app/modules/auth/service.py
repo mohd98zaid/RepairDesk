@@ -43,6 +43,9 @@ async def send_otp(email: str, db: AsyncSession) -> None:
     import logging
     _auth_logger = logging.getLogger("repairdesk.auth")
     _auth_logger.info(f"🔑 [REGISTRATION OTP] Code for {email}: {otp}")
+    print(f"\n==================================================", flush=True)
+    print(f"🔑 [REGISTRATION OTP] Code for {email}: {otp}", flush=True)
+    print(f"==================================================\n", flush=True)
 
     html = f"<p>Your RepairDesk verification code is: <strong>{otp}</strong></p><p>This code expires in 10 minutes.</p>"
     await EmailService.send_email(email, "RepairDesk Registration OTP", html)

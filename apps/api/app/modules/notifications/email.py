@@ -10,6 +10,7 @@ class EmailService:
     @staticmethod
     def send_email_sync(to_email: str, subject: str, html_content: str) -> bool:
         if not settings.smtp_host or not settings.smtp_password:
+            print(f"⚠️ [SMTP WARNING] SMTP not configured (host={settings.smtp_host}, password_set={bool(settings.smtp_password)}). Skipping email to {to_email}", flush=True)
             logger.warning(f"SMTP not configured. Skipping email to {to_email}")
             return False
 
@@ -35,9 +36,11 @@ class EmailService:
                     server.login(settings.smtp_user, settings.smtp_password)
                     server.sendmail(sender, to_email, msg.as_string())
                 
+            print(f"✅ [EMAIL SUCCESS] Sent email to {to_email} via {settings.smtp_host}:{port} from {sender}", flush=True)
             logger.info(f"Successfully sent email to {to_email}")
             return True
         except Exception as e:
+            print(f"❌ [EMAIL FAILED] Could not send email to {to_email}: {type(e).__name__}: {e}", flush=True)
             logger.error(f"Failed to send email to {to_email}: {e}")
             return False
 
