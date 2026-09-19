@@ -215,14 +215,10 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
     active_sessions = len(all_session_keys)
 
     if device_limit != -1 and active_sessions >= device_limit:
-        if device_limit == 1:
-            if all_session_keys:
-                await redis.delete(*all_session_keys)
-        else:
-            raise ForbiddenException(
-                f"Device limit reached. Your plan allows a maximum of {device_limit} active session(s). "
-                "Please log out of another device or upgrade your plan."
-            )
+        excess_count = (active_sessions - device_limit) + 1
+        to_remove = all_session_keys[:excess_count]
+        if to_remove:
+            await redis.delete(*to_remove)
 
     token_data = {
         "sub": str(user.id),
