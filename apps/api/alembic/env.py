@@ -20,7 +20,9 @@ from app.modules.billing.models import Plan, Feature, PlanFeature, Subscription 
 from app.modules.activity.models import ActivityLog  # noqa
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url)
+if settings.database_url:
+    config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
+
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -47,10 +49,15 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
+    from sqlalchemy.ext.asyncio import create_async_engine
+    _connect_args = {}
+    if ":6543" in settings.database_url or "pooler.supabase.com" in settings.database_url:
+        _connect_args["statement_cache_size"] = 0
+
+    connectable = create_async_engine(
+        settings.database_url,
         poolclass=pool.NullPool,
+        connect_args=_connect_args,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
