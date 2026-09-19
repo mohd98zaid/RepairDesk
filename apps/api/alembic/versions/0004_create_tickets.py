@@ -8,6 +8,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import ENUM as PGEnum
 
 revision: str = "0004"
 down_revision: Union[str, None] = "0003"
@@ -15,7 +16,7 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 # Pre-define the enum with create_type=False so create_table doesn't auto-emit CREATE TYPE
-_ticket_status = sa.Enum(
+_ticket_status = PGEnum(
     "RECEIVED", "IN_PROGRESS", "WAITING_PARTS", "READY", "DELIVERED", "CANCELLED",
     name="ticket_status",
     create_type=False,
