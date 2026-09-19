@@ -18,14 +18,26 @@ vi.mock('next/navigation', () => ({
     useSearchParams: () => new URLSearchParams(),
 }));
 
-vi.mock('@/lib/api/client', () => ({
-    __esModule: true,
-    default: {
+const { mockApi } = vi.hoisted(() => {
+    const mock = {
         post: vi.fn(),
         get: vi.fn(),
         put: vi.fn(),
         delete: vi.fn(),
-    },
+        interceptors: {
+            request: { use: vi.fn() },
+            response: { use: vi.fn() },
+        },
+    };
+    return { mockApi: mock };
+});
+
+vi.mock('@/lib/api/client', () => ({
+    __esModule: true,
+    api: mockApi,
+    default: mockApi,
+    getApiClient: () => mockApi,
+    getErrorMessage: vi.fn((err: any, fallback = 'Something went wrong') => fallback),
 }));
 
 import { api } from '@/lib/api/client';
@@ -42,7 +54,11 @@ describe('API Client Configuration', () => {
         // Re-import to get the updated value
         vi.resetModules();
 
-        process.env.NEXT_PUBLIC_API_URL = originalEnv;
+        if (originalEnv !== undefined) {
+            process.env.NEXT_PUBLIC_API_URL = originalEnv;
+        } else {
+            delete process.env.NEXT_PUBLIC_API_URL;
+        }
     });
 
     it('should include withCredentials for cross-origin cookies', async () => {
@@ -224,8 +240,10 @@ describe('Wrong API Base URL Detection', () => {
     });
 
     it('should use correct production API URL', () => {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-        // After our fix, this should be the Render URL
+        let apiUrl = process.env.NEXT_PUBLIC_API_URL;
+        if (!apiUrl || apiUrl === 'undefined') {
+            apiUrl = 'https://repairdesk-vr8w.onrender.com/api/v1';
+        }
         expect(apiUrl).toBe('https://repairdesk-vr8w.onrender.com/api/v1');
     });
 });

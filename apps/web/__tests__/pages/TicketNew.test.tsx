@@ -61,7 +61,10 @@ describe("New Ticket Page", () => {
                 device_type: "Smartphone",
                 reported_issue: "Battery won't charge"
             }));
-            expect(pushMock).toHaveBeenCalledWith("/tickets/ticket-123");
+            expect(screen.getByText("Ticket Created!")).toBeInTheDocument();
         });
+
+        fireEvent.click(screen.getByText(/Skip — View Ticket/i));
+        expect(pushMock).toHaveBeenCalledWith("/tickets/ticket-123");
     });
 });

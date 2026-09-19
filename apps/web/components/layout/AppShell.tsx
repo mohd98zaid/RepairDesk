@@ -132,7 +132,6 @@ function NotificationsBell({
     }, []);
 
     useEffect(() => {
-        const api = require('@/lib/api/client').api;
         if (!api) return;
 
         let evtSource: EventSource | null = null;

@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/authStore';
 vi.mock('next/navigation', () => ({
     useRouter: () => ({
         push: vi.fn(),
+        replace: vi.fn(),
     }),
     usePathname: () => '/dashboard',
 }));
@@ -68,7 +69,7 @@ describe('AppShell Component', () => {
     it('renders desktop sidebar navigation items', () => {
         render(<AppShell><div>Test Content</div></AppShell>);
 
-        expect(screen.getAllByText('RepairDesk').length).toBeGreaterThan(0);
+        expect(screen.getAllByAltText(/repairdesk/i).length).toBeGreaterThan(0);
         expect(screen.getAllByText('Dashboard').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Tickets').length).toBeGreaterThan(0);
     });
@@ -83,10 +84,8 @@ describe('AppShell Component', () => {
         // Mocking the mobile viewport by relying on the component state toggle
         fireEvent.click(toggleBtn);
         
-        // The drawer has .md:hidden class, we can check if it rendered the backdrop
         await waitFor(() => {
-            const drawerBg = document.querySelector('.bg-black\\/60');
-            expect(drawerBg).toBeInTheDocument();
+            expect(screen.getByLabelText('Close Mobile Menu')).toBeInTheDocument();
         });
     });
 

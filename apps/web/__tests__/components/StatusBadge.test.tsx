@@ -7,20 +7,20 @@ describe("StatusBadge Component", () => {
         render(<StatusBadge status="RECEIVED" />);
         const badge = screen.getByText("Received");
         expect(badge).toBeInTheDocument();
-        expect(badge).toHaveClass("bg-zinc-700 text-foreground");
+        expect(badge).toHaveClass("bg-muted", "text-foreground");
     });
 
     it("renders DELIVERED status correctly", () => {
         render(<StatusBadge status="DELIVERED" />);
         const badge = screen.getByText("Delivered");
         expect(badge).toBeInTheDocument();
-        expect(badge).toHaveClass("bg-green-900/70 text-green-300");
+        expect(badge).toHaveClass("bg-emerald-500/10");
     });
 
     it("renders fallback for unknown status", () => {
         render(<StatusBadge status="UNKNOWN_STATE" />);
         const badge = screen.getByText("UNKNOWN_STATE");
         expect(badge).toBeInTheDocument();
-        expect(badge).toHaveClass("bg-zinc-700 text-foreground/90");
+        expect(badge).toHaveClass("bg-muted", "text-foreground/90");
     });
 });
