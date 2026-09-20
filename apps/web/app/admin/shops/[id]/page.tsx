@@ -46,6 +46,10 @@ export default function AdminShopPage() {
     const [quotaSaving, setQuotaSaving] = useState(false);
     const [quotaMsg, setQuotaMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
+    const [teamQuotaInput, setTeamQuotaInput] = useState<string>('');
+    const [teamQuotaSaving, setTeamQuotaSaving] = useState(false);
+    const [teamQuotaMsg, setTeamQuotaMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
     useEffect(() => {
         loadShop();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -62,6 +66,7 @@ export default function AdminShopPage() {
             setShop(data);
             setNote(data.admin_note || '');
             setQuotaInput(data.custom_device_limit !== null && data.custom_device_limit !== undefined ? String(data.custom_device_limit) : '');
+            setTeamQuotaInput(data.custom_team_limit !== null && data.custom_team_limit !== undefined ? String(data.custom_team_limit) : '');
             // Pre-load session count so the badge is correct immediately
             try {
                 const s = await getShopSessions(id);
@@ -100,7 +105,7 @@ export default function AdminShopPage() {
         try {
             const value = quotaInput.trim() === '' ? null : parseInt(quotaInput, 10);
             if (value !== null && (isNaN(value) || value < 0)) {
-                setQuotaMsg({ type: 'err', text: 'Enter a positive number or leave blank to use plan default.' });
+                setQuotaMsg({ type: 'err', text: 'Enter a non-negative number or leave blank to use plan default.' });
                 return;
             }
             await updateShop(id, { custom_device_limit: value });
@@ -109,6 +114,30 @@ export default function AdminShopPage() {
         } catch {
             setQuotaMsg({ type: 'err', text: 'Failed to save quota. Please try again.' });
         } finally { setQuotaSaving(false); }
+    }
+
+    async function handleSaveTeamQuota() {
+        setTeamQuotaSaving(true);
+        setTeamQuotaMsg(null);
+        try {
+            const value = teamQuotaInput.trim() === '' ? null : parseInt(teamQuotaInput, 10);
+            if (value !== null && (isNaN(value) || value < 0)) {
+                setTeamQuotaMsg({ type: 'err', text: 'Enter a non-negative number or leave blank to use plan default.' });
+                return;
+            }
+            await updateShop(id, { custom_team_limit: value });
+            setShop(prev => prev ? { ...prev, custom_team_limit: value } : prev);
+            setTeamQuotaMsg({
+                type: 'ok',
+                text: value === null
+                    ? 'Reset to plan default.'
+                    : value === 0
+                    ? 'Custom limit set to Unlimited members.'
+                    : `Custom limit set to ${value} team member${value !== 1 ? 's' : ''}.`
+            });
+        } catch {
+            setTeamQuotaMsg({ type: 'err', text: 'Failed to save team quota. Please try again.' });
+        } finally { setTeamQuotaSaving(false); }
     }
 
     async function loadTab() {
@@ -311,6 +340,72 @@ export default function AdminShopPage() {
                     {quotaMsg && (
                         <p style={{ fontSize: 12, marginTop: 10, color: quotaMsg.type === 'ok' ? '#4ade80' : '#f87171' }}>
                             {quotaMsg.type === 'ok' ? '✓' : '✗'} {quotaMsg.text}
+                        </p>
+                    )}
+                </div>
+
+                {/* ── Team Member Quota Panel ── */}
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: '20px 24px', marginBottom: 24 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <Users size={14} style={{ color: '#a78bfa' }} />
+                        <p style={{ fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.07em', margin: 0 }}>Team Member Quota Override</p>
+                        {shop.custom_team_limit !== null && shop.custom_team_limit !== undefined && (
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(167,139,250,0.15)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.3)' }}>CUSTOM</span>
+                        )}
+                    </div>
+                    <p style={{ fontSize: 12, color: '#475569', marginBottom: 16, lineHeight: 1.5 }}>
+                        Override how many team members (Owner + Technicians) {shop.name} is allowed. Leave blank to use the plan default (Free plan allows 1 Owner + 1 Technician = 2 members).
+                        Set to <strong style={{ color: '#e2e8f0' }}>0</strong> for unlimited members.
+                    </p>
+
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 160 }}>
+                            <input
+                                type="number"
+                                min="0"
+                                value={teamQuotaInput}
+                                onChange={e => { setTeamQuotaInput(e.target.value); setTeamQuotaMsg(null); }}
+                                placeholder={`Plan default (2 for free)`}
+                                style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '9px 12px', color: '#e2e8f0', fontSize: 14, outline: 'none', boxSizing: 'border-box', minWidth: 0 }}
+                            />
+                            <span style={{ fontSize: 12, color: '#475569', whiteSpace: 'nowrap' }}>members</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button
+                                onClick={handleSaveTeamQuota}
+                                disabled={teamQuotaSaving}
+                                style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', color: '#a78bfa', borderRadius: 8, padding: '9px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
+                            >
+                                {teamQuotaSaving ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={14} />} Save
+                            </button>
+                            {(shop.custom_team_limit !== null && shop.custom_team_limit !== undefined) && (
+                                <button
+                                    onClick={async () => {
+                                        setTeamQuotaInput('');
+                                        setTeamQuotaSaving(true);
+                                        setTeamQuotaMsg(null);
+                                        try {
+                                            await updateShop(id, { custom_team_limit: null });
+                                            setShop(prev => prev ? { ...prev, custom_team_limit: null } : prev);
+                                            setTeamQuotaMsg({ type: 'ok', text: 'Reset to plan default.' });
+                                        } catch {
+                                            setTeamQuotaMsg({ type: 'err', text: 'Failed to reset team quota.' });
+                                        } finally {
+                                            setTeamQuotaSaving(false);
+                                        }
+                                    }}
+                                    title="Clear custom override — revert to plan default"
+                                    style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', color: '#f87171', borderRadius: 8, padding: '9px 14px', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
+                                >
+                                    <X size={13} /> Reset
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {teamQuotaMsg && (
+                        <p style={{ fontSize: 12, marginTop: 10, color: teamQuotaMsg.type === 'ok' ? '#4ade80' : '#f87171' }}>
+                            {teamQuotaMsg.type === 'ok' ? '✓' : '✗'} {teamQuotaMsg.text}
                         </p>
                     )}
                 </div>

@@ -46,13 +46,17 @@ async def invite_team_member(
     email: str = Body(..., embed=True),
     full_name: str = Body(..., embed=True),
     role: str = Body(..., embed=True),
+    password: str | None = Body(default=None, embed=True),
 ):
     """
-    Invite a team member to the shop.
-    In a production system, this would send an email with a sign-up link.
-    For now, it creates a pre-activated user with a temporary password.
+    Directly create or invite a team member to the shop.
+    If password is provided, it is set directly so the user can immediately log in.
+    Otherwise, a temporary password is generated.
     """
     from app.core.security import hash_password
+    from app.modules.shops.models import Shop
+    from app.modules.billing.service import has_feature
+    from sqlalchemy import func
     import secrets
 
     # Validate role
@@ -64,49 +68,81 @@ async def invite_team_member(
         raise HTTPException(status_code=403, detail="Cannot invite another owner.")
 
     # Check if email already in use
-    existing = await db.execute(select(User).where(User.email == email.lower()))
+    clean_email = email.lower().strip()
+    existing = await db.execute(select(User).where(User.email == clean_email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="A user with this email already exists.")
 
-    # Enforce team_limit feature
-    from app.modules.billing.service import has_feature
-    from sqlalchemy import func
-    team_limit_val = await has_feature(current_user["shop_id"], "team_limit", db)
-    if team_limit_val and team_limit_val != "unlimited" and team_limit_val != "-1":
-        if team_limit_val.isdigit():
-            count_result = await db.execute(
-                select(func.count()).where(
-                    User.shop_id == current_user["shop_id"],
-                    User.is_active == True,
-                )
-            )
-            current_count = count_result.scalar_one()
-            if current_count >= int(team_limit_val):
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"Team member limit reached ({team_limit_val}). "
-                            "Please upgrade your plan to add more members.",
-                )
+    # Validate password if provided
+    if password is not None and len(password.strip()) > 0:
+        if len(password.strip()) < 6:
+            raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+        chosen_password = password.strip()
+    else:
+        chosen_password = secrets.token_urlsafe(10)
 
-    temp_password = secrets.token_urlsafe(10)
+    # Enforce team_limit hierarchy:
+    # 1. Shop-level custom_team_limit override set by Admin Portal (0 = unlimited)
+    # 2. Billing plan feature 'team_limit'
+    # 3. Default for Free plan: 2 (1 Owner + 1 Technician)
+    shop_res = await db.execute(select(Shop).where(Shop.id == current_user["shop_id"]))
+    shop = shop_res.scalar_one_or_none()
+    
+    team_limit: int = 2
+    if shop and shop.custom_team_limit is not None:
+        team_limit = -1 if shop.custom_team_limit <= 0 else shop.custom_team_limit
+    else:
+        team_limit_val = await has_feature(current_user["shop_id"], "team_limit", db)
+        if team_limit_val in ("unlimited", "-1"):
+            team_limit = -1
+        elif team_limit_val and team_limit_val.isdigit():
+            team_limit = int(team_limit_val)
+        else:
+            team_limit = 2
+
+    if team_limit != -1:
+        count_result = await db.execute(
+            select(func.count()).where(
+                User.shop_id == current_user["shop_id"],
+                User.is_active == True,
+            )
+        )
+        current_count = count_result.scalar_one()
+        if current_count >= team_limit:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Team member limit reached ({team_limit}). "
+                       "The Free plan allows 1 technician account. "
+                       "Please upgrade your plan or contact admin to add more members.",
+            )
+
     user = User(
         shop_id=current_user["shop_id"],
-        full_name=full_name,
-        email=email.lower(),
-        password_hash=hash_password(temp_password),
+        full_name=full_name.strip(),
+        email=clean_email,
+        password_hash=hash_password(chosen_password),
         role=role,
         is_active=True,
     )
     db.add(user)
     await db.flush()
 
-    # Send email with temp password (never return in response)
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"Team member created for {email}. Temp password sent via email.")
-    # TODO: In production, send email with temp_password via EmailService
+    logger.info(f"Team member created for {clean_email}. Role: {role}.")
+
     return {
-        "message": f"Team member account created for {email}. Temporary password has been sent to their email.",
+        "message": f"Team member account created for {clean_email}.",
+        "user": {
+            "id": str(user.id),
+            "full_name": user.full_name,
+            "email": user.email,
+            "role": user.role,
+        },
+        "credentials": {
+            "email": user.email,
+            "password": chosen_password,
+        },
     }
 
 

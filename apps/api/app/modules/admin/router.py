@@ -944,6 +944,7 @@ async def get_shop_detail(
         "shop_status": shop.shop_status,
         "admin_note": shop.admin_note,
         "custom_device_limit": shop.custom_device_limit,
+        "custom_team_limit": shop.custom_team_limit,
         "plan": shop.plan,
         "created_at": shop.created_at.isoformat(),
         "owner": {"full_name": owner.full_name, "email": owner.email, "id": str(owner.id)} if owner else None,
@@ -963,13 +964,13 @@ async def update_shop_admin(
     admin: dict = AdminUser,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Admin-only: update shop_status, admin_note, and/or custom_device_limit."""
+    """Admin-only: update shop_status, admin_note, custom_device_limit, and/or custom_team_limit."""
     result = await db.execute(select(Shop).where(Shop.id == shop_id))
     shop = result.scalar_one_or_none()
     if not shop:
         raise HTTPException(status_code=404, detail="Shop not found")
 
-    ALLOWED = {"shop_status", "admin_note", "custom_device_limit"}
+    ALLOWED = {"shop_status", "admin_note", "custom_device_limit", "custom_team_limit"}
     VALID_STATUSES = {"ACTIVE", "RESTRICTED", "BLOCKED", "INACTIVE"}
     changed_fields = []
 
@@ -991,6 +992,15 @@ async def update_shop_admin(
                         detail="custom_device_limit must be a non-negative integer or null."
                     )
 
+        if field == "custom_team_limit":
+            # Accept None (reset to plan default), or a non-negative integer
+            if value is not None:
+                if not isinstance(value, int) or value < 0:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="custom_team_limit must be a non-negative integer or null."
+                    )
+
         setattr(shop, field, value)
         changed_fields.append(field)
 
@@ -1008,6 +1018,7 @@ async def update_shop_admin(
         "shop_status": shop.shop_status,
         "admin_note": shop.admin_note,
         "custom_device_limit": shop.custom_device_limit,
+        "custom_team_limit": shop.custom_team_limit,
     }
 
 
