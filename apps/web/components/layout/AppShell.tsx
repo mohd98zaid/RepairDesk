@@ -35,6 +35,7 @@ import { clsx } from "clsx";
 import { GlobalSearch } from "./GlobalSearch";
 import { QRScannerModal } from "@/components/QRScanner";
 import { OfflineSyncManager } from "@/components/OfflineSyncManager";
+import { ScrollToTop } from "./ScrollToTop";
 
 const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -860,6 +861,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <BroadcastBanner />
                 <ShopStatusBanner status={shopStatus} />
                 <div className="flex-1 overflow-x-hidden">{children}</div>
+                <ScrollToTop />
             </main>
 
             {qrOpen && <QRScannerModal onClose={() => setQrOpen(false)} />}
