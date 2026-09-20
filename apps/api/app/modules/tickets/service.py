@@ -596,15 +596,18 @@ async def delete_ticket(
     )
     parts = parts_result.scalars().all()
 
-    for part in parts:
-        inv_item_result = await db.execute(
+    if parts:
+        item_ids = [p.inventory_item_id for p in parts]
+        inv_items_result = await db.execute(
             select(InventoryItem)
-            .where(InventoryItem.id == part.inventory_item_id)
+            .where(InventoryItem.id.in_(item_ids))
             .with_for_update()
         )
-        inv_item = inv_item_result.scalar_one_or_none()
-        if inv_item:
-            inv_item.quantity += part.quantity_used
+        inv_items_map = {item.id: item for item in inv_items_result.scalars().all()}
+        for part in parts:
+            inv_item = inv_items_map.get(part.inventory_item_id)
+            if inv_item:
+                inv_item.quantity += part.quantity_used
 
     # 3. Delete images from MinIO (run sync SDK in thread pool to avoid blocking event loop)
     images_result = await db.execute(

@@ -467,12 +467,17 @@ async def update_purchase_order(
     # Handle inventory restocking securely based on Status transitions
     if old_status != "RECEIVED" and po.status == "RECEIVED":
         from app.modules.inventory.models import InventoryItem
-        for item in po.items:
-            inv_item_result = await db.execute(
-                select(InventoryItem).where(InventoryItem.id == item.inventory_item_id).with_for_update()
+        if po.items:
+            item_ids = [item.inventory_item_id for item in po.items]
+            inv_items_res = await db.execute(
+                select(InventoryItem)
+                .where(InventoryItem.id.in_(item_ids))
+                .with_for_update()
             )
-            inv_item = inv_item_result.scalar_one_or_none()
-            if inv_item:
-                inv_item.quantity += item.quantity
+            inv_map = {inv.id: inv for inv in inv_items_res.scalars().all()}
+            for item in po.items:
+                inv_item = inv_map.get(item.inventory_item_id)
+                if inv_item:
+                    inv_item.quantity += item.quantity
                 
     return po

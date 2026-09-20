@@ -51,11 +51,15 @@ export function OfflineSyncManager() {
 
             for (const item of pending) {
                 try {
+                    const replayHeaders = { ...item.headers };
+                    delete replayHeaders["Authorization"];
+                    delete replayHeaders["authorization"];
+
                     await api.request({
                         method: item.method,
                         url: item.url,
                         data: item.data,
-                        headers: item.headers,
+                        headers: replayHeaders,
                     });
 
                     if (item.id) {

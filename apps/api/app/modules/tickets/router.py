@@ -24,10 +24,7 @@ from app.modules.tickets.schemas import (
     RatingSubmit,
     RatingResponse,
 )
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
-limiter = Limiter(key_func=get_remote_address)
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
 
@@ -130,6 +127,7 @@ async def delete_ticket(
         ticket_id=ticket_id,
         db=db,
     )
+    await db.commit()
     return
 
 

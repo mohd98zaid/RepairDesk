@@ -60,17 +60,13 @@ def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(key=REFRESH_COOKIE_NAME, path="/", secure=_COOKIE_SECURE, samesite=samesite)
 
 
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-limiter = Limiter(key_func=get_remote_address)
+from app.core.limiter import limiter
 
 @router.post("/send-otp", status_code=202)
 @limiter.limit("5/minute")
 async def send_otp(request: Request, data: SendOtpRequest, db: DbSession):
     """Generate a 6-digit OTP for email verification and send it."""
-    from app.modules.notifications.service import send_registration_otp
-    otp = await service.create_registration_otp(data.email, db)
-    await send_registration_otp(data.email, otp)
+    await service.send_otp(data.email, db)
     return {"message": "OTP sent successfully."}
 
 
@@ -78,7 +74,7 @@ async def send_otp(request: Request, data: SendOtpRequest, db: DbSession):
 @limiter.limit("10/minute")
 async def verify_otp(request: Request, data: VerifyOtpRequest, db: DbSession):
     """Verify the registration OTP. Returns a single-use verified_token."""
-    token = await service.verify_registration_otp(data.email, data.otp, db)
+    token = await service.verify_otp(data.email, data.otp, db)
     return VerifyOtpResponse(verified_token=token)
 
 
