@@ -90,13 +90,29 @@ function NavLink({
 
 // ── Theme Toggle Hook ────────────────────────────────────────
 function useTheme() {
-    const [dark, setDark] = useState(true);
+    const [dark, setDark] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('theme') !== 'light';
+        }
+        return true;
+    });
     useEffect(() => {
         const saved = localStorage.getItem('theme');
         const isDark = saved !== 'light';
         setDark(isDark);
         document.documentElement.classList.toggle('dark', isDark);
         document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+
+        try {
+            const bc = new BroadcastChannel('theme');
+            bc.onmessage = (e) => {
+                const isD = e.data === 'dark';
+                setDark(isD);
+                document.documentElement.classList.toggle('dark', isD);
+                document.documentElement.style.colorScheme = isD ? 'dark' : 'light';
+            };
+            return () => bc.close();
+        } catch { /* ignore */ }
     }, []);
     function toggle() {
         const next = !dark;

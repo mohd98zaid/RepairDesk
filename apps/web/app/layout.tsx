@@ -59,6 +59,27 @@ export default function RootLayout({
         {/* MS tile */}
         <meta name="msapplication-TileColor" content="#10b981" />
         <meta name="msapplication-TileImage" content="/icons/icon-192.png" />
+
+        {/* Prevent theme flash / FOUC */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var saved = localStorage.getItem('theme');
+                  var isDark = saved !== 'light';
+                  if (isDark) {
+                    document.documentElement.classList.add('dark');
+                    document.documentElement.style.colorScheme = 'dark';
+                  } else {
+                    document.documentElement.classList.remove('dark');
+                    document.documentElement.style.colorScheme = 'light';
+                  }
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
       </head>
       <body className="min-h-screen bg-background font-sans antialiased" suppressHydrationWarning>
         {/* <PWARegister /> */}

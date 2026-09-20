@@ -94,25 +94,21 @@ export default function DashboardPage() {
             const today = todayDate.toISOString().split('T')[0];
 
             // Use allSettled so a single failing endpoint doesn't crash the whole dashboard.
-            // This is critical for Render's free tier which cold-starts and may time out.
             const [
                 ticketRes,
                 allTicketsRes,
-                deliveredTodayRes,
-                invRes,
-                invAllRes,
+                dailyRes,
+                invLowRes,
                 revenueRes,
             ] = await Promise.allSettled([
                 ticketsApi.list({ per_page: 5 }),
                 ticketsApi.list({ per_page: 100 }),
-                ticketsApi.list({ status: "DELIVERED", from_date: today, per_page: 100 }),
-                inventoryApi.list({ per_page: 1 }),
-                inventoryApi.list({ per_page: 100 }),
+                reportsApi.daily(today),
+                inventoryApi.list({ low_stock_only: true, per_page: 8 }),
                 reportsApi.revenueBreakdown(),
             ]);
 
-            // If the primary ticket/auth calls failed, surface the error
-            // If both ticket calls failed (e.g. backend unreachable or unauthenticated), surface the error
+            // If primary ticket calls failed, surface error
             if (ticketRes.status === "rejected" && allTicketsRes.status === "rejected") {
                 console.error("Critical dashboard data failed:", ticketRes, allTicketsRes);
                 setError(true);
@@ -124,28 +120,21 @@ export default function DashboardPage() {
                 ["RECEIVED", "IN_PROGRESS", "WAITING_PARTS"].includes(t.status)
             ).length;
             const ready = allItems.filter((t: { status: string }) => t.status === "READY").length;
-            const resolved_today = deliveredTodayRes.status === "fulfilled"
-                ? (deliveredTodayRes.value?.items?.length ?? 0)
+            const resolved_today = dailyRes.status === "fulfilled"
+                ? (dailyRes.value?.tickets_completed ?? 0)
                 : 0;
 
-            // Collect low stock items for detail panel
-            const allInvItems = invAllRes.status === "fulfilled" ? (invAllRes.value?.items || []) : [];
-            const lowItems: LowStockItem[] = allInvItems.filter(
-                (item: LowStockItem) => item.quantity <= (item.low_stock_threshold ?? 5)
-            );
-            setLowStockItems(lowItems.slice(0, 8));
-
-            const lowStockCount = invRes.status === "fulfilled"
-                ? (invRes.value?.low_stock_count ?? invRes.value?.total ?? lowItems.length)
+            // Low stock items from dedicated low_stock query
+            const lowItems: LowStockItem[] = invLowRes.status === "fulfilled" ? (invLowRes.value?.items || []) : [];
+            setLowStockItems(lowItems);
+            const lowStockCount = invLowRes.status === "fulfilled"
+                ? (invLowRes.value?.total ?? lowItems.length)
                 : lowItems.length;
 
-            const totalRevenue = revenueRes.status === "fulfilled"
-                ? (revenueRes.value?.total_revenue ?? "0")
-                : "0";
-
-            if (revenueRes.status === "rejected") {
-                console.warn("Revenue breakdown failed (non-critical):", revenueRes.reason);
-            }
+            const rawRev = revenueRes.status === "fulfilled"
+                ? Number(revenueRes.value?.total_revenue || 0)
+                : (dailyRes.status === "fulfilled" ? Number(dailyRes.value?.total_revenue || 0) : 0);
+            const totalRevenue = rawRev >= 100000 ? `₹${(rawRev / 1000).toFixed(0)}k` : `₹${rawRev.toLocaleString("en-IN")}`;
 
             let slaCount = 0;
             let slaTotal = 0;
@@ -219,21 +208,23 @@ export default function DashboardPage() {
 
             {/* KPI Cards */}
             {loading ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 [@media(min-width:900px)]:grid-cols-5 gap-3 sm:gap-4 mb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-6">
                     {Array.from({ length: 6 }).map((_, i) => (
                         <div key={i} className="bg-muted rounded-xl p-5 h-28 sm:h-24 animate-pulse" />
                     ))}
                 </div>
             ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 [@media(min-width:900px)]:grid-cols-5 gap-3 sm:gap-4 mb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-6">
                     <KPICard icon={Clock} label="Open Tickets" value={kpi?.open ?? 0}
                         sub="Active repairs" color="bg-indigo-600" href="/tickets" />
                     <KPICard icon={CheckCircle} label="Ready for Pickup" value={kpi?.ready ?? 0}
                         sub="Customer to collect" color="bg-emerald-600" href="/tickets?status=READY" />
                     <KPICard icon={Wrench} label="Resolved Today" value={kpi?.resolved_today ?? 0}
                         sub="Delivered today" color="bg-teal-600" href="/tickets?status=DELIVERED" />
+                    <KPICard icon={IndianRupee} label="Total Revenue" value={kpi?.total_revenue ?? "₹0"}
+                        sub="All-time earnings" color="bg-blue-600" href="/reports" />
                     <KPICard icon={Activity} label="SLA Compliance" value={`${kpi?.sla_rate ?? 100}%`}
-                        sub="Tickets meeting deadlines" color={((kpi?.sla_rate ?? 100) < 90) ? "bg-amber-600" : "bg-emerald-600"} href="/tickets" />
+                        sub="Meeting deadlines" color={((kpi?.sla_rate ?? 100) < 90) ? "bg-amber-600" : "bg-emerald-600"} href="/tickets" />
                     <KPICard icon={AlertTriangle} label="Low Stock Items" value={kpi?.low_stock ?? 0}
                         sub="Needs restocking" color={kpi?.low_stock ? "bg-amber-600 !text-white" : "bg-muted"} href="/inventory" />
                 </div>

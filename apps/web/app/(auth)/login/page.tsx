@@ -42,7 +42,12 @@ export default function LoginPage() {
     }, []);
 
     // Dark/light mode toggle (reads from the root layout's theme initializer)
-    const [dark, setDark] = useState(true);
+    const [dark, setDark] = useState(() => {
+        if (typeof window !== "undefined") {
+            return localStorage.getItem("theme") !== "light";
+        }
+        return true;
+    });
     useEffect(() => {
         const saved = localStorage.getItem('theme');
         setDark(saved !== 'light');
