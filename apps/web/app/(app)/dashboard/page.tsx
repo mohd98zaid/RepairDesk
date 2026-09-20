@@ -47,48 +47,23 @@ function KPICard({
     const inner = (
         <div
             className="relative group h-full overflow-hidden rounded-2xl bg-card border border-border p-3.5 sm:p-5 flex flex-col items-start justify-between min-h-[105px] sm:min-h-[140px]"
-            style={{
-                transition: 'transform 0.22s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.22s ease, border-color 0.22s ease, background 0.25s ease',
-                boxShadow: 'var(--glass-shadow)',
-            }}
-            onMouseEnter={e => {
-                const el = e.currentTarget;
-                el.style.transform = 'translateY(-4px) scale(1.018)';
-                el.style.boxShadow = '0 20px 56px rgba(99,102,241,0.22), 0 6px 20px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.45)';
-                el.style.borderColor = 'rgba(99,102,241,0.55)';
-            }}
-            onMouseLeave={e => {
-                const el = e.currentTarget;
-                el.style.transform = '';
-                el.style.boxShadow = 'var(--glass-shadow)';
-                el.style.borderColor = '';
-            }}
+            style={{ boxShadow: 'var(--glass-shadow)' }}
         >
-            {/* Ambient background glow — intensifies on hover */}
-            <div className={`absolute -top-12 -right-12 w-36 h-36 rounded-full blur-[55px] opacity-10 group-hover:opacity-40 transition-opacity duration-500 pointer-events-none ${color}`} />
-
-            {/* Shine sweep on hover */}
-            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
-                style={{
-                    background: 'linear-gradient(125deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.18) 50%, rgba(255,255,255,0) 70%)',
-                    backgroundSize: '200% 100%',
-                    animation: 'shineSweep 0.6s ease forwards',
-                }}
-            />
+            {/* Ambient background glow — subtle on hover */}
+            <div className={`absolute -top-12 -right-12 w-36 h-36 rounded-full blur-[55px] opacity-10 group-hover:opacity-25 transition-opacity duration-300 pointer-events-none ${color}`} />
 
             <div className="flex w-full items-start justify-between z-10 sm:mb-2">
                 <div
-                    className={`p-2 sm:p-3 rounded-xl shadow-inner transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg ${color}`}
-                    style={{ transition: 'transform 0.22s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.22s ease' }}
+                    className={`p-2 sm:p-3 rounded-xl shadow-inner transition-all duration-200 group-hover:scale-105 ${color}`}
                 >
                     <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${color.includes('bg-') && !color.includes('bg-muted') ? 'text-white' : 'text-foreground'}`} />
                 </div>
             </div>
 
             <div className="z-10 w-full mt-auto">
-                <p className="text-muted-foreground text-[10px] sm:text-xs font-semibold uppercase tracking-wider mt-2 sm:mt-3 mb-0.5 sm:mb-1 opacity-80 line-clamp-1 group-hover:opacity-100 transition-opacity">{label}</p>
+                <p className="text-xs font-medium text-muted-foreground mt-2 sm:mt-3 mb-0.5 sm:mb-1 line-clamp-1">{label}</p>
                 <div className="flex flex-col items-start">
-                    <p className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight drop-shadow-sm leading-none group-hover:text-primary transition-colors duration-300">{value}</p>
+                    <p className="text-2xl sm:text-3xl font-bold tracking-tight leading-none font-mono" style={{ fontFamily: "'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace", fontVariantNumeric: 'tabular-nums' }}>{value}</p>
                     {sub && <p className="text-muted-foreground text-[10px] sm:text-xs truncate max-w-full mt-0.5 sm:mt-1">{sub}</p>}
                 </div>
             </div>

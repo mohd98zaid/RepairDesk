@@ -7,20 +7,26 @@ describe("StatusBadge Component", () => {
         render(<StatusBadge status="RECEIVED" />);
         const badge = screen.getByText("Received");
         expect(badge).toBeInTheDocument();
-        expect(badge).toHaveClass("bg-muted", "text-foreground");
+        // Precision left-border style: grey border, tinted background
+        expect(badge).toHaveStyle({ borderLeft: "3px solid #6B7280" });
+        expect(badge).toHaveStyle({ borderRadius: "4px" });
     });
 
     it("renders DELIVERED status correctly", () => {
         render(<StatusBadge status="DELIVERED" />);
         const badge = screen.getByText("Delivered");
         expect(badge).toBeInTheDocument();
-        expect(badge).toHaveClass("bg-emerald-500/10");
+        // Precision left-border style: teal-green border
+        expect(badge).toHaveStyle({ borderLeft: "3px solid #059669" });
+        expect(badge).toHaveStyle({ borderRadius: "4px" });
     });
 
     it("renders fallback for unknown status", () => {
         render(<StatusBadge status="UNKNOWN_STATE" />);
         const badge = screen.getByText("UNKNOWN_STATE");
         expect(badge).toBeInTheDocument();
-        expect(badge).toHaveClass("bg-muted", "text-foreground/90");
+        // Falls back to grey precision border style
+        expect(badge).toHaveStyle({ borderLeft: "3px solid #6B7280" });
+        expect(badge).toHaveStyle({ borderRadius: "4px" });
     });
 });

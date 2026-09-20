@@ -154,10 +154,6 @@ export default function LoginPage() {
 
     return (
         <div className="min-h-screen flex items-center justify-center p-4 bg-background">
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute -top-40 -right-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl" />
-                <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-violet-600/20 rounded-full blur-3xl" />
-            </div>
 
             {/* Theme toggle button — top right */}
             <button
@@ -171,9 +167,7 @@ export default function LoginPage() {
 
             <div className="relative w-full max-w-md">
                 <div className="flex items-center gap-3 mb-8 justify-center">
-                    <div className="bg-white rounded-xl w-[200px] h-14 flex items-center justify-center overflow-hidden shadow-lg px-3 py-1">
-                        <img src="/logo.png" alt="RepairDeskz" className="w-full h-auto object-contain scale-[1.15]" />
-                    </div>
+                    <img src="/logo.png" alt="RepairDeskz" className="h-14 w-auto object-contain" />
                 </div>
 
                 <div className="glass rounded-2xl p-5 sm:p-8 shadow-2xl">
@@ -387,7 +381,8 @@ export default function LoginPage() {
                                     type="submit"
                                     id="login-submit"
                                     disabled={isSubmitting}
-                                    className="w-full py-3 rounded-lg gradient-primary text-white font-semibold hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                                    className="w-full py-3 rounded-lg text-white font-semibold hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                                    style={{ background: 'var(--primary)' }}
                                 >
                                     {isSubmitting ? (
                                         <><Loader2 className="w-4 h-4 animate-spin" /> Signing in...</>
