@@ -42,15 +42,23 @@ def _generate_pdf(html: str) -> bytes:
         raise RuntimeError(f"PDF generation failed: {exc}") from exc
 
 
-def _upload_pdf(pdf_bytes: bytes, key: str) -> None:
-    client = get_minio_client()
-    client.put_object(
-        bucket_name=settings.minio_bucket,
-        object_name=key,
-        data=io.BytesIO(pdf_bytes),
-        length=len(pdf_bytes),
-        content_type="application/pdf",
-    )
+async def _upload_pdf(pdf_bytes: bytes, key: str) -> None:
+    """Upload PDF bytes to MinIO. Runs the synchronous SDK call in a thread pool
+    to avoid blocking the asyncio event loop."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+
+    def _sync_upload() -> None:
+        client = get_minio_client()
+        client.put_object(
+            bucket_name=settings.minio_bucket,
+            object_name=key,
+            data=io.BytesIO(pdf_bytes),
+            length=len(pdf_bytes),
+            content_type="application/pdf",
+        )
+
+    await loop.run_in_executor(None, _sync_upload)
 
 
 async def generate_invoice(
@@ -149,7 +157,7 @@ async def generate_invoice(
     # Generate PDF
     pdf_bytes = _generate_pdf(html)
     minio_key = f"invoices/{shop_id}/{ticket_id}/{invoice_number}.pdf"
-    _upload_pdf(pdf_bytes, minio_key)
+    await _upload_pdf(pdf_bytes, minio_key)
 
     # Save to DB
     public_token = secrets.token_urlsafe(32)

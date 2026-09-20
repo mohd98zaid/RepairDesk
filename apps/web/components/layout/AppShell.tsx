@@ -176,8 +176,10 @@ function NotificationsBell({
 
     function markAllRead() {
         const next = new Set([...seen, ...notifs.map(n => n.id)]);
-        setSeen(next);
-        localStorage.setItem('notif_seen', JSON.stringify([...next]));
+        // Prune to last 500 IDs to prevent unbounded localStorage growth
+        const pruned = new Set([...next].slice(-500));
+        setSeen(pruned);
+        localStorage.setItem('notif_seen', JSON.stringify([...pruned]));
     }
 
     function handleOpen() {

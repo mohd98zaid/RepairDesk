@@ -84,6 +84,14 @@ class Settings(BaseSettings):
         if self.environment == "production":
             if "*" in self.cors_origins or not self.cors_origins:
                 self.cors_origins = [self.frontend_url]
+
+        # Fail fast on missing critical secrets to prevent silent auth bypass.
+        # An empty jwt_secret means any JWT signed with "" is accepted — disabling auth.
+        if not self.jwt_secret:
+            raise ValueError(
+                "JWT_SECRET must be set to a non-empty value. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
             
         return self
 

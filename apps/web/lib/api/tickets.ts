@@ -114,10 +114,9 @@ export const ticketsApi = {
   },
 
   getPublicInfo: async (id: string) => {
-    // Public endpoint — use a plain fetch so no auth header is sent
-    const baseUrl = typeof window !== "undefined"
-      ? (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000")
-      : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
+    // Public endpoint — use a plain fetch so no auth header is sent.
+    // Note: NEXT_PUBLIC_API_URL already includes /api/v1 (e.g. https://api.example.com/api/v1)
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
     const res = await fetch(`${baseUrl}/tickets/${id}/public-info`);
     if (!res.ok) throw new Error("Ticket not found");
     return res.json() as Promise<{

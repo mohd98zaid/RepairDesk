@@ -38,6 +38,13 @@ async def send_otp(email: str, db: AsyncSession) -> None:
     otp = f"{secrets.randbelow(1_000_000):06d}"
 
     redis = await get_redis()
+
+    # Rate guard: if a fresh OTP was already sent within the last minute, skip.
+    # This limits email flooding even if the rate-limiter is bypassed via IP rotation.
+    existing_ttl = await redis.ttl(f"otp:{email}")
+    if existing_ttl > (60 * 9):  # OTP still has > 9 minutes remaining — too fresh
+        return
+
     await redis.setex(f"otp:{email}", 60 * 10, otp)  # 10 minutes
 
     import logging
@@ -161,8 +168,14 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
                     )
     except UnauthorizedException:
         raise
-    except Exception:
-        pass  # If shop lookup fails, continue with login
+    except Exception as e:
+        # Fail-closed: if shop status cannot be verified, deny login rather than
+        # silently allowing a potentially BLOCKED/INACTIVE shop to authenticate.
+        import logging as _logging
+        _logging.getLogger(__name__).error(
+            f"Shop status lookup failed during login for user {user.id}: {e}"
+        )
+        raise UnauthorizedException("Unable to verify account status. Please try again.")
 
     # Update last_login_at (defensively — column may not exist on old DBs)
     try:

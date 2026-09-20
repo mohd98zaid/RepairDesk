@@ -186,6 +186,7 @@ async def test_rd06_send_otp_does_not_print_to_stdout(capsys):
     with patch("app.modules.auth.service.get_redis", new_callable=AsyncMock) as mock_redis, \
          patch("app.modules.notifications.email.EmailService.send_email", new_callable=AsyncMock):
         mock_redis_inst = AsyncMock()
+        mock_redis_inst.ttl.return_value = 0  # No existing OTP — allow send
         mock_redis.return_value = mock_redis_inst
 
         await send_otp("user@example.com", db)

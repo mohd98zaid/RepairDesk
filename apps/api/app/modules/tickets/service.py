@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
@@ -287,12 +288,14 @@ async def change_ticket_status(
         cust_res = await db.execute(select(Customer).where(Customer.id == ticket.customer_id))
         cust = cust_res.scalar_one_or_none()
         if cust and old_status != data.status:
-            asyncio.create_task(AlertService.notify_status_change(
+            # Hold a strong reference to prevent GC before the task completes
+            task = asyncio.create_task(AlertService.notify_status_change(
                 ticket_number=ticket.ticket_number,
                 status=data.status,
                 customer_phone=cust.phone,
                 customer_email=cust.email
             ))
+            task.add_done_callback(lambda _: None)  # Keep ref alive until done
     except Exception as e:
         import logging
         logging.error(f"Failed to trigger alerts: {e}")
@@ -603,13 +606,14 @@ async def delete_ticket(
         if inv_item:
             inv_item.quantity += part.quantity_used
 
-    # 3. Delete images from MinIO
+    # 3. Delete images from MinIO (run sync SDK in thread pool to avoid blocking event loop)
     images_result = await db.execute(
         select(TicketImage).where(TicketImage.ticket_id == ticket_id)
     )
     images = images_result.scalars().all()
+    loop = asyncio.get_event_loop()
     for img in images:
-        delete_object(img.minio_key)
+        await loop.run_in_executor(None, delete_object, img.minio_key)
 
     # 4. Physical deletion from DB (Cascade handles related records)
     await db.delete(ticket)

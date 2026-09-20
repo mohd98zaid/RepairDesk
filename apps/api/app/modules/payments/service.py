@@ -104,6 +104,10 @@ async def handle_payment_success(ticket_id: str, db: AsyncSession) -> None:
             # Generate invoice if not already generated
             await generate_invoice(ticket.shop_id, ticket.id, db)
             await db.flush()
+            # Explicitly commit to ensure payment success is persisted even if
+            # the FastAPI dependency lifecycle auto-commit is interrupted by an
+            # early Response(status_code=200) return in the webhook handler.
+            await db.commit()
             logger.info(f"Payment success: ticket {ticket_id} marked DELIVERED")
             log_payment_success(str(ticket.shop_id), ticket_id)
         else:

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, date
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,6 +11,10 @@ from app.core.db import Base
 
 class Invoice(Base):
     __tablename__ = "invoices"
+    __table_args__ = (
+        # Prevent duplicate invoice numbers for the same shop (race condition guard)
+        UniqueConstraint("shop_id", "invoice_number", name="uq_shop_invoice_number"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

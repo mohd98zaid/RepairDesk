@@ -127,7 +127,16 @@ async def adjust_stock(
     data: StockAdjustment,
     db: AsyncSession,
 ) -> InventoryItem:
-    item = await get_item(shop_id, item_id, db)
+    # Use SELECT ... FOR UPDATE to prevent concurrent stock adjustment race conditions
+    result = await db.execute(
+        select(InventoryItem)
+        .where(InventoryItem.id == item_id, InventoryItem.shop_id == shop_id)
+        .with_for_update()
+    )
+    item = result.scalar_one_or_none()
+    if not item:
+        from app.core.exceptions import NotFoundException
+        raise NotFoundException("Inventory item not found.")
     new_qty = item.quantity + data.delta
     if new_qty < 0:
         raise ValidationException(
