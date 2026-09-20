@@ -8,15 +8,17 @@ import { Overlay } from './Overlay';
 gsap.registerPlugin(ScrollTrigger);
 
 // ── Scrub config ─────────────────────────────────────────────────────────
-// GSAP scrub value: 0.4 provides smooth buttery deceleration on desktop
-const SCRUB_DESKTOP = 0.4;
-const SCRUB_MOBILE  = 0.15;
+// Lenis provides the physics momentum (1.2s ease-out).
+// A light scrub (0.15s desktop, 0.1s mobile) ensures the canvas frame
+// tracks the smooth scroll momentum responsively without trailing lag.
+const SCRUB_DESKTOP = 0.15;
+const SCRUB_MOBILE  = 0.10;
 
 // Throttle React text-overlay updates to avoid layout thrash
 const TEXT_THRESHOLD_DESKTOP = 0.001;
-const TEXT_THRESHOLD_MOBILE  = 0.006;
+const TEXT_THRESHOLD_MOBILE  = 0.005;
 
-// Extracted from disassembly.mp4 (6.03s at 30fps)
+// Extracted from upscaled-video.mp4 (1080p full HD, 181 frames total)
 const FRAME_COUNT = 181;
 
 export default function Experience() {
@@ -37,18 +39,24 @@ export default function Experience() {
 
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false }); // alpha: false optimizes blit speed
     if (!ctx) return;
 
     const SCRUB       = mobile ? SCRUB_MOBILE : SCRUB_DESKTOP;
     const TEXT_THRESH = mobile ? TEXT_THRESHOLD_MOBILE : TEXT_THRESHOLD_DESKTOP;
 
-    // ── Preload & Pre-decode Images ─────────────────────────────────────
+    // ── Preload & Pre-decode 1080p WebP Frames ──────────────────────────
     const images: HTMLImageElement[] = [];
     for (let i = 1; i <= FRAME_COUNT; i++) {
       const img = new window.Image();
       const frameNum = i.toString().padStart(3, '0');
       img.src = `/frames/frame_${frameNum}.webp`;
+
+      // Prioritize early frames for instant hero responsiveness
+      if (i <= 20 && 'fetchPriority' in img) {
+        (img as any).fetchPriority = 'high';
+      }
+
       if ('decode' in img) {
         img.decode().catch(() => {});
       }
@@ -56,12 +64,28 @@ export default function Experience() {
     }
     imagesRef.current = images;
 
-    // ── Draw Function (Cover sizing) ────────────────────────────────────
+    // ── Helper: Find Nearest Available Frame ───────────────────────────
+    const getAvailableFrame = (index: number): HTMLImageElement | null => {
+      const direct = images[index];
+      if (direct && direct.complete && direct.naturalWidth !== 0) {
+        return direct;
+      }
+      // Look for nearby loaded frame within +/- 20 frames to avoid stutter
+      for (let offset = 1; offset <= 20; offset++) {
+        const prev = images[index - offset];
+        if (prev && prev.complete && prev.naturalWidth !== 0) return prev;
+        const next = images[index + offset];
+        if (next && next.complete && next.naturalWidth !== 0) return next;
+      }
+      return null;
+    };
+
+    // ── Draw Function (Cover sizing with Retina high-DPI scaling) ───────
     const drawFrame = (index: number) => {
       if (!isMounted.current) return;
       if (index < 0 || index >= FRAME_COUNT) return;
-      const img = imagesRef.current[index];
 
+      const img = getAvailableFrame(index);
       if (img && img.complete && img.naturalWidth !== 0) {
         const canvasRatio = canvas.width / canvas.height;
         const imgRatio = img.naturalWidth / img.naturalHeight;
@@ -79,17 +103,18 @@ export default function Experience() {
           renderX = (canvas.width - renderWidth) / 2;
         }
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, renderX, renderY, renderWidth, renderHeight);
         lastFrameRef.current = index;
       }
     };
 
-    // ── Size canvas to fill viewport ────────────────────────────────────
+    // ── Size canvas to fill viewport with device pixel ratio ───────────
     const sizeCanvas = () => {
       if (!isMounted.current || !canvas) return;
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(window.innerWidth * dpr);
+      canvas.height = Math.round(window.innerHeight * dpr);
+
       if (lastFrameRef.current !== -1) {
         drawFrame(lastFrameRef.current);
       } else if (imagesRef.current[0]?.complete) {
@@ -112,7 +137,10 @@ export default function Experience() {
       const p = proxyRef.current.progress;
 
       // Map progress (0 to 1) to frame index (0 to 180)
-      const targetFrameIndex = Math.round(p * (FRAME_COUNT - 1));
+      const targetFrameIndex = Math.min(
+        FRAME_COUNT - 1,
+        Math.max(0, Math.round(p * (FRAME_COUNT - 1)))
+      );
 
       if (targetFrameIndex !== lastFrameRef.current) {
         drawFrame(targetFrameIndex);
@@ -138,11 +166,6 @@ export default function Experience() {
       },
     });
 
-    // Normalize scroll only on mobile devices to prevent URL bar jump
-    if (mobile) {
-      ScrollTrigger.normalizeScroll(true);
-    }
-
     // Initial state sync
     const initialProgress = ScrollTrigger.getAll()[0]?.progress ?? 0;
     proxyRef.current.progress = initialProgress;
@@ -152,9 +175,6 @@ export default function Experience() {
       isMounted.current = false;
       gsap.ticker.remove(onTick);
       trigger.kill();
-      if (mobile) {
-        ScrollTrigger.normalizeScroll(false);
-      }
       window.removeEventListener('resize', sizeCanvas);
     };
   }, []);
@@ -175,7 +195,7 @@ export default function Experience() {
           style={{ height: '30%', background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.85))' }}
         />
 
-        {/* ── Framewise Image Sequence Canvas (Universal Desktop & Mobile) ── */}
+        {/* ── 1080p Full HD Canvas Image Sequence ── */}
         <canvas
           ref={canvasRef}
           style={{
