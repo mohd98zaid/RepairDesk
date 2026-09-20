@@ -4,15 +4,13 @@ import { useRef, useEffect, useState } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Overlay } from './Overlay';
-import dynamic from 'next/dynamic';
-const Desktop3DSceneNoSSR = dynamic(() => import('./Desktop3DScene'), { ssr: false });
 
 gsap.registerPlugin(ScrollTrigger);
 
-// ── Mobile config ─────────────────────────────────────────────────────────
-// GSAP scrub value: higher = more smoothing lag (1.5 is cinematic, 0.1 is instant 1:1)
-const SCRUB_DESKTOP = 0.2;
-const SCRUB_MOBILE  = 0.1;
+// ── Scrub config ─────────────────────────────────────────────────────────
+// GSAP scrub value: 0.4 provides smooth buttery deceleration on desktop
+const SCRUB_DESKTOP = 0.4;
+const SCRUB_MOBILE  = 0.15;
 
 // Throttle React text-overlay updates to avoid layout thrash
 const TEXT_THRESHOLD_DESKTOP = 0.001;
@@ -22,125 +20,102 @@ const TEXT_THRESHOLD_MOBILE  = 0.006;
 const FRAME_COUNT = 181;
 
 export default function Experience() {
-  const canvasRef   = useRef<HTMLCanvasElement>(null);
-  const proxyRef    = useRef({ progress: 0 });   // GSAP drives this object
+  const canvasRef    = useRef<HTMLCanvasElement>(null);
+  const proxyRef     = useRef({ progress: 0 }); // GSAP drives this object
   const lastFrameRef = useRef(-1);
-  const lastTextRef = useRef(0);
-  const isMobile    = useRef(false);
-  const imagesRef   = useRef<HTMLImageElement[]>([]); // preloaded frames array
-  
+  const lastTextRef  = useRef(0);
+  const isMobile     = useRef(false);
+  const imagesRef    = useRef<HTMLImageElement[]>([]); // preloaded frames array
+  const isMounted    = useRef(false);
+
   const [displayProgress, setDisplayProgress] = useState(0);
-  const [isClientMode, setIsClientMode] = useState(false);
-  const [isMobileDevice, setIsMobileDevice] = useState(false);
-  const isMounted = useRef(false);
 
   useEffect(() => {
     isMounted.current = true;
     const mobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     isMobile.current = mobile;
-    setIsMobileDevice(mobile);
-    setIsClientMode(true);
 
-    const SCRUB       = mobile ? SCRUB_MOBILE  : SCRUB_DESKTOP;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const SCRUB       = mobile ? SCRUB_MOBILE : SCRUB_DESKTOP;
     const TEXT_THRESH = mobile ? TEXT_THRESHOLD_MOBILE : TEXT_THRESHOLD_DESKTOP;
 
-    // ── Prepare Canvas ONLY if Mobile ───────────────────────────────────
-    let sizeCanvas = () => {};
-    if (mobile && canvasRef.current) {
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        
-        if (ctx) {
-            // Load frames
-            const images: HTMLImageElement[] = [];
-            for (let i = 1; i <= FRAME_COUNT; i++) {
-                const img = new window.Image();
-                const frameNum = i.toString().padStart(3, '0');
-                img.src = `/frames/frame_${frameNum}.webp`;
-                images.push(img);
-            }
-            imagesRef.current = images;
+    // ── Preload & Pre-decode Images ─────────────────────────────────────
+    const images: HTMLImageElement[] = [];
+    for (let i = 1; i <= FRAME_COUNT; i++) {
+      const img = new window.Image();
+      const frameNum = i.toString().padStart(3, '0');
+      img.src = `/frames/frame_${frameNum}.webp`;
+      if ('decode' in img) {
+        img.decode().catch(() => {});
+      }
+      images.push(img);
+    }
+    imagesRef.current = images;
 
-            const drawFrame = (index: number) => {
-                if (!isMounted.current) return;
-                if (index < 0 || index >= FRAME_COUNT) return;
-                const img = imagesRef.current[index];
-                
-                if (img && img.complete && img.naturalWidth !== 0) {
-                    const canvasRatio = canvas.width / canvas.height;
-                    const imgRatio = img.naturalWidth / img.naturalHeight;
-                    
-                    let renderWidth = canvas.width;
-                    let renderHeight = canvas.height;
-                    let renderX = 0;
-                    let renderY = 0;
-                    
-                    if (canvasRatio > imgRatio) {
-                        renderHeight = canvas.width / imgRatio;
-                        renderY = (canvas.height - renderHeight) / 2;
-                    } else {
-                        renderWidth = canvas.height * imgRatio;
-                        renderX = (canvas.width - renderWidth) / 2;
-                    }
+    // ── Draw Function (Cover sizing) ────────────────────────────────────
+    const drawFrame = (index: number) => {
+      if (!isMounted.current) return;
+      if (index < 0 || index >= FRAME_COUNT) return;
+      const img = imagesRef.current[index];
 
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(img, renderX, renderY, renderWidth, renderHeight);
-                    lastFrameRef.current = index;
-                }
-            };
+      if (img && img.complete && img.naturalWidth !== 0) {
+        const canvasRatio = canvas.width / canvas.height;
+        const imgRatio = img.naturalWidth / img.naturalHeight;
 
-            sizeCanvas = () => {
-              if (!isMounted.current) return;
-              canvas.width = window.innerWidth;
-              canvas.height = window.innerHeight;
-              if (lastFrameRef.current !== -1) {
-                drawFrame(lastFrameRef.current);
-              }
-            };
-            sizeCanvas();
-            window.addEventListener('resize', sizeCanvas, { passive: true });
+        let renderWidth = canvas.width;
+        let renderHeight = canvas.height;
+        let renderX = 0;
+        let renderY = 0;
 
-            if (images[0].complete) {
-                drawFrame(0);
-            } else {
-                images[0].addEventListener('load', () => drawFrame(0), { once: true });
-            }
+        if (canvasRatio > imgRatio) {
+          renderHeight = canvas.width / imgRatio;
+          renderY = (canvas.height - renderHeight) / 2;
+        } else {
+          renderWidth = canvas.height * imgRatio;
+          renderX = (canvas.width - renderWidth) / 2;
         }
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, renderX, renderY, renderWidth, renderHeight);
+        lastFrameRef.current = index;
+      }
+    };
+
+    // ── Size canvas to fill viewport ────────────────────────────────────
+    const sizeCanvas = () => {
+      if (!isMounted.current || !canvas) return;
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      if (lastFrameRef.current !== -1) {
+        drawFrame(lastFrameRef.current);
+      } else if (imagesRef.current[0]?.complete) {
+        drawFrame(0);
+      }
+    };
+    sizeCanvas();
+    window.addEventListener('resize', sizeCanvas, { passive: true });
+
+    // Draw first frame once ready
+    if (images[0].complete) {
+      drawFrame(0);
+    } else {
+      images[0].addEventListener('load', () => drawFrame(0), { once: true });
     }
 
-    // ── GSAP ticker callback ───────────────────────────────────────────
+    // ── GSAP Ticker Callback ───────────────────────────────────────────
     const onTick = () => {
       if (!isMounted.current) return;
       const p = proxyRef.current.progress;
 
-      if (isMobile.current) {
-          const targetFrameIndex = Math.round(p * (FRAME_COUNT - 1));
-          if (targetFrameIndex !== lastFrameRef.current && imagesRef.current[targetFrameIndex]) {
-              const index = targetFrameIndex;
-              const canvas = canvasRef.current;
-              const img = imagesRef.current[index];
-              if (canvas && img && img.complete && img.naturalWidth !== 0) {
-                  const ctx = canvas.getContext('2d');
-                  if (ctx) {
-                      const canvasRatio = canvas.width / canvas.height;
-                      const imgRatio = img.naturalWidth / img.naturalHeight;
-                      let renderWidth = canvas.width;
-                      let renderHeight = canvas.height;
-                      let renderX = 0;
-                      let renderY = 0;
-                      if (canvasRatio > imgRatio) {
-                          renderHeight = canvas.width / imgRatio;
-                          renderY = (canvas.height - renderHeight) / 2;
-                      } else {
-                          renderWidth = canvas.height * imgRatio;
-                          renderX = (canvas.width - renderWidth) / 2;
-                      }
-                      ctx.clearRect(0, 0, canvas.width, canvas.height);
-                      ctx.drawImage(img, renderX, renderY, renderWidth, renderHeight);
-                      lastFrameRef.current = index;
-                  }
-              }
-          }
+      // Map progress (0 to 1) to frame index (0 to 180)
+      const targetFrameIndex = Math.round(p * (FRAME_COUNT - 1));
+
+      if (targetFrameIndex !== lastFrameRef.current) {
+        drawFrame(targetFrameIndex);
       }
 
       // Throttle text overlay updates
@@ -151,45 +126,43 @@ export default function Experience() {
     };
     gsap.ticker.add(onTick);
 
-    // ── ScrollTrigger drives proxy.progress 0→1 ──────────────
+    // ── ScrollTrigger drives proxy.progress 0→1 ─────────────────────────
     const trigger = ScrollTrigger.create({
-      trigger : document.body,
-      start   : 'top top',
-      end     : 'bottom bottom',
-      scrub   : SCRUB,
+      trigger: document.body,
+      start: 'top top',
+      end: 'bottom bottom',
+      scrub: SCRUB,
       onUpdate: (self) => {
         if (!isMounted.current) return;
         proxyRef.current.progress = self.progress;
       },
     });
 
-    // Only normalize on mobile/touch devices
+    // Normalize scroll only on mobile devices to prevent URL bar jump
     if (mobile) {
       ScrollTrigger.normalizeScroll(true);
     }
 
+    // Initial state sync
     const initialProgress = ScrollTrigger.getAll()[0]?.progress ?? 0;
     proxyRef.current.progress = initialProgress;
     setDisplayProgress(initialProgress);
 
-     return () => {
-       isMounted.current = false;
-       gsap.ticker.remove(onTick);
-       trigger.kill();
-       ScrollTrigger.normalizeScroll(false);
-       if (isMobile.current && typeof sizeCanvas === 'function') {
-           window.removeEventListener('resize', sizeCanvas);
-       }
-     };
+    return () => {
+      isMounted.current = false;
+      gsap.ticker.remove(onTick);
+      trigger.kill();
+      if (mobile) {
+        ScrollTrigger.normalizeScroll(false);
+      }
+      window.removeEventListener('resize', sizeCanvas);
+    };
   }, []);
-
 
   return (
     <div className="relative bg-black">
-
       {/* ── Fixed Background ── */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-
         {/* Radial vignette */}
         <div
           className="absolute inset-0 z-10 pointer-events-none"
@@ -202,17 +175,15 @@ export default function Experience() {
           style={{ height: '30%', background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.85))' }}
         />
 
-        {/* ── Desktop R3F 3D Scene ── */}
-      {/* Client-side 3D scene to avoid hydration mismatch */}
-      <Desktop3DSceneNoSSR proxyRef={proxyRef} />
-
-        {/* ── Framewise Image Sequence Canvas (Mobile) ── */}
+        {/* ── Framewise Image Sequence Canvas (Universal Desktop & Mobile) ── */}
         <canvas
           ref={canvasRef}
           style={{
-            position: 'absolute', inset: 0,
-            width: '100%', height: '100%',
-            display: isClientMode && isMobileDevice ? 'block' : 'none',
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            display: 'block',
           }}
         />
 
@@ -223,7 +194,7 @@ export default function Experience() {
         />
       </div>
 
-      {/* ── Overlay ── */}
+      {/* ── Text Overlay & Storyline ── */}
       <div className="relative z-10">
         <Overlay scrollProgress={displayProgress} />
       </div>
