@@ -53,6 +53,37 @@ class EmailService:
                 logger.error(f"Failed to send email to {to_email}: {e}")
                 return False
 
+        def _send_via_brevo() -> bool:
+            if not settings.brevo_api_key:
+                return False
+            try:
+                import httpx
+                sender_email = settings.smtp_user if (settings.smtp_user and "gmail.com" in settings.smtp_user) else "repairdesk.otp@gmail.com"
+                resp = httpx.post(
+                    "https://api.brevo.com/v3/smtp/email",
+                    headers={
+                        "api-key": settings.brevo_api_key,
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                    json={
+                        "sender": {"name": "RepairDesk", "email": sender_email},
+                        "to": [{"email": to_email}],
+                        "subject": subject,
+                        "htmlContent": html_content,
+                    },
+                    timeout=10.0,
+                )
+                if resp.status_code in (200, 201):
+                    print(f"✅ [BREVO SUCCESS] Sent email to {to_email} via Brevo HTTPS API", flush=True)
+                    return True
+                else:
+                    print(f"❌ [BREVO ERROR] Brevo returned {resp.status_code}: {resp.text}", flush=True)
+                    return False
+            except Exception as e:
+                print(f"❌ [BREVO FAILED] Failed sending via Brevo: {e}", flush=True)
+                return False
+
         def _send_via_resend() -> bool:
             if not settings.resend_api_key:
                 return False
@@ -86,13 +117,19 @@ class EmailService:
                 return False
 
         # Execution flow:
+        # 1. Prefer Brevo HTTPS API if configured (bypasses Render SMTP port blocking and sends to any recipient)
+        if settings.brevo_api_key:
+            if _send_via_brevo():
+                return True
+
+        # 2. Prefer SMTP if configured
         if prefer_smtp:
             if _send_via_smtp():
                 return True
-            # If SMTP fails (e.g. timeout on port 587 on Render Free), fallback to Resend if available
             if settings.resend_api_key:
                 print(f"🔄 [FALLBACK] Attempting Resend fallback for {to_email}...", flush=True)
-                return _send_via_resend()
+                if _send_via_resend():
+                    return True
             return False
         else:
             if settings.resend_api_key:
@@ -101,7 +138,7 @@ class EmailService:
             if has_smtp:
                 return _send_via_smtp()
 
-        print(f"⚠️ [EMAIL WARNING] Neither working SMTP nor Resend configured. Skipping email to {to_email}", flush=True)
+        print(f"⚠️ [EMAIL WARNING] No working email delivery service configured. Skipping email to {to_email}", flush=True)
         return False
 
     @staticmethod

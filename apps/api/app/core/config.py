@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     from_email: str = "RepairDesk <noreply@repairdesk.app>"
     resend_api_key: str = ""
+    brevo_api_key: str = ""
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
