@@ -49,10 +49,15 @@ async def send_otp(email: str, db: AsyncSession) -> None:
 
     import logging
     _auth_logger = logging.getLogger("repairdesk.auth")
-    _auth_logger.info(f"Registration OTP generated for {email}")
+    _auth_logger.info(f"Registration OTP generated for {email}: {otp}")
+    print(f"🔑 [AUTH OTP] Registration code for {email}: {otp}", flush=True)
 
     html = f"<p>Your RepairDesk verification code is: <strong>{otp}</strong></p><p>This code expires in 10 minutes.</p>"
-    await EmailService.send_email(email, "RepairDesk Registration OTP", html)
+    sent = await EmailService.send_email(email, "RepairDesk Registration OTP", html)
+    if not sent:
+        # Delivery failed (e.g. Resend 403 test-recipient restriction) — clear cooldown so user can retry immediately
+        await redis.delete(f"otp:{email}")
+        print(f"⚠️ [OTP NOT DELIVERED] Failed to send email to {email}. If using Resend test tier, emails can only be sent to the account owner (mohd98zaid@gmail.com). You can use the OTP printed above to verify!", flush=True)
 
 
 async def verify_otp(email: str, otp: str, db: AsyncSession) -> str:
@@ -423,6 +428,8 @@ async def send_force_logout_otp(email: str, db: AsyncSession) -> None:
     otp = f"{secrets.randbelow(1_000_000):06d}"
     redis = await get_redis()
     await redis.setex(f"force_logout_otp:{email}", 60 * 10, otp)  # 10 minutes
+
+    print(f"🔑 [AUTH OTP] Force-Logout OTP code for {email}: {otp}", flush=True)
 
     html = (
         f"<p>Hello {user.full_name},</p>"
