@@ -224,20 +224,21 @@ async def update_ticket(
     db: AsyncSession,
 ) -> Ticket:
     ticket = await get_ticket(shop_id, ticket_id, db)
-    ALLOWED_FIELDS = {"device_model", "technician_notes", "estimated_cost", "final_cost", "assigned_to", "pre_repair_checklist", "customer_signature", "warranty_days", "sla_deadline", "sla_hours"}
-    for field, value in data.model_dump(exclude_none=True).items():
+    dump = data.model_dump(exclude_none=True)
+    if "assigned_to" in dump and dump["assigned_to"] is not None:
+        assigned_user_check = await db.execute(
+            select(User).where(User.id == dump["assigned_to"], User.shop_id == shop_id, User.is_active == True)
+        )
+        if not assigned_user_check.scalar_one_or_none():
+            raise ValidationException("Assigned user does not belong to this shop.")
+        ticket.assigned_to = dump["assigned_to"]
+
+    if "sla_hours" in dump and dump["sla_hours"] is not None:
+        ticket.sla_deadline = datetime.now(timezone.utc) + timedelta(hours=dump["sla_hours"])
+
+    ALLOWED_FIELDS = {"device_model", "technician_notes", "estimated_cost", "final_cost", "pre_repair_checklist", "customer_signature", "warranty_days", "sla_deadline"}
+    for field, value in dump.items():
         if field not in ALLOWED_FIELDS:
-            continue
-        if field == "assigned_to" and value is not None:
-            assigned_user_check = await db.execute(
-                select(User).where(User.id == value, User.shop_id == shop_id, User.is_active == True)
-            )
-            if not assigned_user_check.scalar_one_or_none():
-                raise ValidationException("Assigned user does not belong to this shop.")
-            ticket.assigned_to = value
-            continue
-        if field == "sla_hours":
-            ticket.sla_deadline = datetime.now(timezone.utc) + timedelta(hours=value)
             continue
         if field in ("estimated_cost", "final_cost") and value is not None:
             setattr(ticket, field, Decimal(value))
